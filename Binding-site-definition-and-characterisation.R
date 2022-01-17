@@ -443,9 +443,105 @@ ggplot(BS_endo_genes, aes(x = gene_type))+
   theme_paper()
 
 
-#############################
-# bound gene regions
-#############################
+
+################################################
+# assign BS to their regions with a hierarchical approach
+###############################################
+
+#split up 3' and 5' UTR
+# make a df with needed info from UTRs
+utr_df <- as.data.frame(annotation[annotation$type=="UTR"])
+#get cds and match start of cds to utr df
+cds4UTR <- annotation[annotation$type=="CDS"]%>% as.data.frame
+idx_UTR_cds <- match(utr_df$transcript_id, cds4UTR$transcript_id)
+utr_df <- cbind(utr_df, start_CDS=cds4UTR[idx_UTR_cds,]$start)
+
+# UTR is 3' if the start of the cds is downstream of the start of the UTR, else is 5'
+utr_df <- utr_df %>% 
+  mutate(type=ifelse((.$strand == '+'& .$start > .$start_CDS)|
+                       (.$strand=='-' & .$start <.$start_CDS), "3UTR", "5UTR"))
+utr_35 <- utr_df %>% makeGRangesFromDataFrame(keep.extra.columns = TRUE)
+utr_35$start_CDS <- NULL
+
+annotation <- c(annotation[annotation$type!="UTR"], utr_35)
+
+
+#make a GRanges with all regions overlaping BS
+idx_BS_regions <- findOverlaps(binding_sites_repro, annotation, ignore.strand = FALSE)
+BS_with_all_regions <- binding_sites_repro[queryHits(idx_BS_regions)]
+elementMetadata(BS_with_all_regions) <- c(elementMetadata(BS_with_all_regions),
+                                          elementMetadata(annotation[subjectHits(idx_BS_regions)]))
+
+table(BS_with_all_regions$gene_type)
+
+# hirarcy: 3'UTR, 5'UTR, CDS, intron 
+# start and stop codon left out -> part of UTRs
+
+# initialise column of peak region
+BS_with_all_regions$BS_region <- NA
+
+#########
+# 3' UTR
+#########
+# get BS overlapping with 3'UTRs 
+BS_3utr <- BS_with_all_regions[BS_with_all_regions$type == "3UTR"] %>% unique 
+BS_3utr$BS_region <- "3UTR"
+BS_assigned_regions <- BS_3utr
+
+
+##########
+# 5'UTR
+#########
+# get cds BS, that are not overlaping to utrs
+BS_5utr <- BS_with_all_regions[-queryHits(findOverlaps(
+  BS_with_all_regions, BS_assigned_regions, type="any"))] %>% .[.$type=="5UTR"]%>% unique
+BS_5utr$BS_region <- "5UTR"
+# add assigned CDS BS to assigned regions
+BS_assigned_regions <- c(BS_assigned_regions, BS_5utr)
+
+##########
+# CDS
+########
+# get cds BS, that are not overlaping to utrs
+BS_cds <- BS_with_all_regions[-queryHits(findOverlaps(
+  BS_with_all_regions, BS_assigned_regions, type="any"))] %>% .[.$type=="CDS"]%>% unique
+BS_cds$BS_region <- "CDS"
+# add assigned CDS BS to assigned regions
+BS_assigned_regions <- c(BS_assigned_regions, BS_cds)
+
+
+###############
+# non coding 
+#############
+# get non-coding BS, that are not overlaping to before
+BS_noncod <- BS_with_all_regions[-queryHits(findOverlaps(
+  BS_with_all_regions, BS_assigned_regions, type="any"))] %>% .[.$type=="exon"]%>% unique
+BS_noncod$BS_region <- "non_cod"
+# add assigned CDS BS to assigned regions
+BS_assigned_regions <- c(BS_assigned_regions, BS_noncod)
+
+
+########## 
+# intron
+##########
+# get intron BS, that are not overlaping to before
+BS_intron <- BS_with_all_regions[-queryHits(findOverlaps(
+  BS_with_all_regions, BS_assigned_regions, type="any"))] %>% .[.$type=="transcript"]%>% unique
+BS_intron$BS_region <- "intron"
+BS_assigned_regions <- c(BS_assigned_regions, BS_intron)
+
+#####################
+# small RNAs are annotaed as genes
+#####################
+BS_other <- BS_with_all_regions[-queryHits(findOverlaps(
+  BS_with_all_regions, BS_assigned_regions, type="any"))] %>% unique
+BS_other$BS_region <- "non_cod"
+BS_assigned_regions <- c(BS_assigned_regions, BS_other)
+
+table(BS_assigned_regions$BS_region)
+
+
+
 
 
 
