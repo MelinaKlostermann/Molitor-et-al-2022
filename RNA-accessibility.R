@@ -173,7 +173,7 @@ accesibility_bg <- as.data.frame(accesibility_bg)
 
 # 4.2) background mean and sd from subsets
 #############################
-### the population mean and background are calcualted from 1000 subsets of the background
+### the population mean and background are calculated from 1000 subsets of the background
 
 # index for 1000 sets with 100 nt sequences
 idx_sets <- replicate(1000, sample(1:ncol(accesibility_bg), 1000), simplify = F)
@@ -193,9 +193,9 @@ bg_stats_df_stats <- data.frame(mean = apply(bg_stats_df, 2, function(x) mean(x,
 
 
 
-# 4.3) z-scores of BS accesibility
+# 4.3) z-scores of BS accessibility
 #############################
-# z-score  = sample mean -  population mean / poplulation sd (sample = binding site, population = background)
+# z-score  = sample mean -  population mean / population sd (sample = binding site, population = background)
 
 df_accessibility_bs_bg <- bg_stats_df_stats %>%
   mutate(bs_mean = gg_df_mean$BS, 
