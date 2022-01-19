@@ -10,8 +10,8 @@
 ### ---------------------------------------------------------------
 ###
 ### 1) Normalisation and spline smoothing of crosslink patterns
-### 2) smoothed crosslink patterns around binding sites
-### 3) crosslink patterns in the start of 3'UTRs
+### 2) Smoothed crosslink patterns around binding sites
+### 3) Crosslink patterns at the start of 3'UTRs
 ###
 ###
 
@@ -33,14 +33,14 @@ library(ComplexHeatmap)
 # Input
 BS # a Granges object of binding sites definde from endogenous PURA iCLIP
 CL_path_experimentwise # a list of paths to the bigwig files containing the crosslink events per experiment (here split in plus and minus strand)
-anno_full # gff3 file of Genome annotation from GENCODE imported as Granges object
+anno_full # gff3 file of genome annotation from GENCODE imported as Granges object
 
 ### ===============================================
 ### 1) Normalisation and spline smoothing of crosslink patterns
 ### ===============================================
 # Note: this approach was adapted from Heyl & Backofen 2021 - "StoatyDive: Evaluation and classification of peak profiles for sequencing data"
 
-# min max norm
+# min max normalisation
 min_max_noramlize <- function(x){
   x_new <- (x-min(x)) / (max(x)-min(x)) 
   return(x_new)
@@ -51,7 +51,7 @@ min_max_noramlize <- function(x){
 smoothing <- function(y, lambda, dim){
   data_points <- length(y)
   
-  # Test if we have just a vector of constant values.
+  # test if we have just a vector of constant values.
   which(y != max(y))
   if ( length(which(y != max(y))) != 0 ){
     x <- c(1:data_points)
@@ -82,7 +82,7 @@ clean_smooth <- function(data_smoothed) {
 
 
 ### ====================================
-### 2) smoothed crosslink patterns around binding sites
+### 2) Smoothed crosslink patterns around binding sites
 ### ====================================
 window_around_BS # the size by which BS are enlarged to both sites to obtain the window of interest
 
@@ -96,7 +96,7 @@ cl_window <- c(map(crosslink_rles[c(1,3,5)], ~.x[window[strand(window)=="+"]] %>
 cl_window_normalized <- lapply(cl_window, function(x) apply(x, 1, min_max_noramlize) %>% t(.))
 
 
-# Set NaNs to zero
+# set NaNs to zero
 cl_window_normalized[[1]][which(is.na(cl_window_normalized[[1]]))] = 0
 cl_window_normalized[[2]][which(is.na(cl_window_normalized[[2]]))] = 0
 cl_window_normalized[[3]][which(is.na(cl_window_normalized[[3]]))] = 0
@@ -127,7 +127,7 @@ Heatmap(as.matrix(cl_window_norm_smooth_cluster[,1:94], ncol = 94), cluster_colu
 
 
 ### ============================================
-### 3) crosslink patterns in the start of 3'UTRs
+### 3) Crosslink patterns at the start of 3'UTRs
 ### ============================================
 
 # window at the beginning of the 3'UTR
@@ -186,7 +186,7 @@ cl_window <- list(endo = rbind(cl_window[[2]], cl_window[[5]]),
 cl_window_normalized <- lapply(cl_window, function(x) apply(x, 1, min_max_noramlize) %>% t(.))
 
 
-# Set NaNs to zero
+# set NaNs to zero
 cl_window_normalized[[1]][which(is.na(cl_window_normalized[[1]]))] = 0
 cl_window_normalized[[2]][which(is.na(cl_window_normalized[[2]]))] = 0
 cl_window_normalized[[3]][which(is.na(cl_window_normalized[[3]]))] = 0
@@ -196,7 +196,7 @@ cl_window_norm_smooth <- lapply(cl_window_normalized,  apply, 1, function(x) smo
 cl_window_norm_smooth <- lapply(cl_window_norm_smooth, function(x) clean_smooth(data_smoothed = x))  
 
 
-# Heatmap of all three
+# heatmap of all three
 cl_window_norm_smooth <- rbind(cl_window_norm_smooth$endo, cl_window_norm_smooth$oe, cl_window_norm_smooth$flag)
 h1 <- Heatmap(cl_window_norm_smooth[[1]], cluster_columns = F, use_raster = T, raster_device = "png", raster_quality = 10) 
 h2 <- Heatmap(cl_window_norm_smooth[[2]], cluster_columns = F, use_raster = T, raster_device = "png", raster_quality = 10) 
