@@ -37,7 +37,7 @@ library(Biostrings)
 transcript_annotation <- readDNAStringSet("./gencode.v31.transcripts.fa.gz")
 
 ## PURA binding sites 
-BS_tx  # as obtained from xxx
+BS_tx  # as obtained from Binding-site-definition-and-characterisation.R
 
 ### ============================================================
 ### 1) Map BS to transcripts
