@@ -10,12 +10,12 @@
 ###
 ### 1) Transfere binding sites to transcript annotation
 ### 2) Accessibility
-##### 2.1) Obtaining fasta files of bound sequences 
-##### 2.2) Obtaining fasta files of random background
-##### 2.3) Predicting RNA accessibility with RNAplfold (commandline) and concatinating output files
-##### 2.4) z-score calculation and plot
-### 3) Motifes
-### 3.1) 
+## 2.1) Obtaining fasta files of bound sequences 
+## 2.2) Obtaining fasta files of random background
+## 2.3) Predicting RNA accessibility with RNAplfold (commandline) and concatinating output files
+## 2.4) z-score calculation and plot
+### 3) Motif - 5-mer analysis
+### 
 ###
 
 
