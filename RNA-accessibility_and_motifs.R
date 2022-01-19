@@ -8,11 +8,11 @@
 ### Structure of this script
 ### ---------------------------------------------------------------
 ###
-### 1) Transfere binding sites to transcript annotation
+### 1) Transfer binding sites to transcript annotation
 ### 2) Accessibility
-## 2.1) Obtaining fasta files of bound sequences 
-## 2.2) Obtaining fasta files of random background
-## 2.3) Predicting RNA accessibility with RNAplfold (commandline) and concatinating output files
+## 2.1) Obtain fasta files of bound sequences 
+## 2.2) Obtain fasta files of random background
+## 2.3) Predict RNA accessibility with RNAplfold (command line) and concatinate output files
 ## 2.4) z-score calculation and plot
 ### 3) Motif - 5-mer analysis
 ### 
@@ -33,17 +33,17 @@ library(ggpubr)
 library(Biostrings)
 
 # Input
-## transcript seqeunces fasta from gencode
+## transcript sequences fasta from gencode
 transcript_annotation <- readDNAStringSet("./gencode.v31.transcripts.fa.gz")
 
 ## PURA binding sites 
-BS_tx  # as obtaines from xxx
+BS_tx  # as obtained from xxx
 
 ### ============================================================
-### 1) map BS to transcripts
+### 1) Map BS to transcripts
 ### ============================================================
 ###################
-# get sequences of  mature transcripts
+# Get sequences of mature transcripts
 ##################
 
 # expressed transcripts ( = transcripts with any crosslinks)
@@ -56,7 +56,7 @@ expressed_transcripts_GR_list <- subsetByOverlaps(annotation_transcripts_exons, 
   GRangesList(.) 
 
 
-# seq of all transcripts
+# sequence of all transcripts
 transcript_annotation <- readDNAStringSet("/Users/melinaklostermann/Documents/projects/anno/GENCODEv31-p12/gencode.v31.transcripts.fa.gz") #alternative extractTranscriptSeqs(x, transcripts, ...)
 transcript_anno_meta <- names(transcript_annotation) 
 transcript_anno_meta <- data.frame(all = transcript_anno_meta) %>%
@@ -68,7 +68,7 @@ names(transcript_annotation) <- transcript_anno_meta$transcript_id
 
 
 ###########################
-# BS seq considering mature transcripts
+# BS sequence considering mature transcripts
 ##########################
 
 
@@ -79,11 +79,11 @@ txdb <- makeTxDbFromGRanges(unlist(expressed_transcripts_GR_list))
 # prepare a transcript mapper (contains transcript ids and names together with genomic positions of transcripts)
 transcripts_txdb_mapper <- transcripts(txdb)
 
-# get transcript realtive coordinates of BS
+# get transcript-relative coordinates of BS
 BS_tx<- mapToTranscripts(BS, txdb, extractor.fun = GenomicFeatures::exonsBy)
 
 
-# change the seqnames to the trnascript names
+# change the seqnames to the transcript names
 BS_tx<- as.data.frame(BS_tx)
 BS_tx$seqnames<- transcripts_txdb_mapper$tx_name[as.numeric(BS_tx$seqnames)] %>% substring(.,1,15)
 
@@ -96,7 +96,7 @@ BS_tx$seqnames<- transcripts_txdb_mapper$tx_name[as.numeric(BS_tx$seqnames)] %>%
 ### ============================================================
 
 #############################################
-### 2.1) Obtaining fasta files of bound sequences 
+### 2.1) Obtain fasta files of bound sequences 
 #############################################
 
 # get transcript_id and transcript lengths from fasta names
@@ -121,7 +121,7 @@ BS_tx_501nt <- BS_tx_501nt[width(BS_tx_501nt) == 501]
 # only one transcript per BS
 BS_tx_501nt <- BS_tx_501nt[!duplicated(BS_tx_501nt$xHits)]
 
-# get transcript seqences of enlarged BS 
+# get transcript sequences of enlarged BS 
 BS_tx_501nt_seqs <- getSeq(x = transcript_annotation, names = BS_tx_501nt)
 BS_tx_501nt_seqs <- BS_tx_501nt_seqs[width(BS_tx_501nt_seqs)==501]
 
@@ -130,7 +130,7 @@ writeXStringSet(BS_tx_501nt_seqs, filepath = paste0(output,"endo_BS_trans_500nt.
 
 
 ############################################
-### 2.2) Obtaining fasta files of random background
+### 2.2) Obtain fasta files of random background
 ############################################
 
 set.seed(2)
@@ -143,7 +143,7 @@ big_transcript_annotation_df <- transcript_annotation_df[transcript_annotation_d
 random_transcripts <- data.frame(transcript = sample(1:NROW(big_transcript_annotation_df), n_random, replace = F))
 random_transcripts$transcript_id <- big_transcript_annotation_df[random_transcripts$transcript,]$tx_name
 
-# seq of random expressed transcripts set
+# sequences of random expressed transcripts set
 random_transcript_seqs <-  transcript_annotation[names(transcript_annotation) %in% random_transcripts$transcript_id,] 
 
 # subset for random window of 300 nt
@@ -166,11 +166,11 @@ writeXStringSet(random_transcript_seqs_500, filepath = paste0(output,"background
 
 
 ###############################################
-### 2.3) Predicting RNA accessibility with RNAplfold (commandline) and concatinating output files
+### 2.3) Predict RNA accessibility with RNAplfold (command line) and concatinate output files
 ###############################################
 
-### Note RNAplfold is used here via command line on the fasta files created above
-### RNAplfold creates on folder per fasta input
+### Note: RNAplfold is used here via command line on the fasta files created above
+### RNAplfold creates one folder per fasta input
 ### each folder contains a text file ending on _*lunp for each sequence in the fasta file
 
 input_folders <- list("./RNApl_background_transcripts_500nt/",
@@ -213,7 +213,7 @@ save(probs, file =output_probs)
 
 # 2.4.1) log-odds ratio
 ##############################
-### First unpaired probabilitties from RNAplfold are tranfered to log-odd ratios 
+### First, unpaired probabilitties from RNAplfold are transfered to log-odd ratios 
 ### to obtain a bell-shaped distribution of values which is neccesary for z-score calculation
 
 
@@ -239,13 +239,13 @@ idx_sets <- replicate(1000, sample(1:ncol(accesibility_bg), 1000), simplify = F)
 # get sets
 bg_sets <- map(idx_sets, ~accesibility_bg[,.x])
 
-# calc nt wise mean per set an make mean df
+# calculate nt-wise mean per set and make means_df
 bg_stats <- map(bg_sets, ~t(.x) %>%
                   as.data.frame(.) %>%
                   summarise_all(.funs = function(x) mean(x, na.rm=T)))
 bg_stats_df <- map_dfr(bg_stats, ~.x)
 
-# calc mean and sd of means_df
+# calculate mean and sd of means_df
 bg_stats_df_stats <- data.frame(mean = apply(bg_stats_df, 2, function(x) mean(x, na.rm = T)),
                                 sd = apply(bg_stats_df, 2, function(x) sd(x, na.rm =T)), pos = -250:250)
 
@@ -298,7 +298,7 @@ seqences_BS_cds <- getSeq(x = transcriptome_seqs, names = BS_CDS)
 
 
 #############################
-# random background 3'UTR
+# Random background 3'UTR
 #############################
 # get 3'UTRs on transcripts
 threeUTR_transcript_anno <- mapToTranscripts(unlist(threeUTRsByTranscript(txdb, use.names = T)), txdb, extractor.fun = GenomicFeatures::exonsBy, use.names =T) %>%
@@ -336,7 +336,7 @@ seqences_bg_3utr <- getSeq(x = transcriptome_seqs, names =random_bg_3utr)
 
 
 ###################
-# random background CDS
+# Random background CDS
 ##################
 CDS_transcript_anno <- mapToTranscripts(unlist(cdsBy(txdb, use.names = T)), txdb, extractor.fun = GenomicFeatures::exonsBy, use.names =T) %>%
   GenomicRanges::reduce() %>%
@@ -372,9 +372,9 @@ seqences_bg_cds <- getSeq(x = transcriptome_seqs, names =random_bg_cds)
 
 
 ##########################
-# frequency scatter
+# Frequency scatter
 ##########################
-# function to calc oligo frequency
+# function to calculate motif (oligo) frequency
 calc_olig_freq <- function(seq_regions, oligo){
   
   nu_freq = oligonucleotideFrequency(seq_regions, width = oligo) %>%
@@ -388,7 +388,7 @@ calc_olig_freq <- function(seq_regions, oligo){
   return(nu_freq)
 }
 
-# function to make 5 scatter plots of oligofrequency 
+# function to make 5 scatter plots of oligo frequency 
 plot_freq_scatter <- function(gr_regions, bg, oligo, title, filename, window, color_thresh){
   
   # sites: get upstream and downstream window 
