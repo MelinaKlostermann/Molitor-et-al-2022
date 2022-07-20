@@ -13,4 +13,8 @@ We analysed PURA's in vivo binding behaviour to RNAs in iCLIP experiments. These
 - crosslink events: number of crosslink events detected (one crosslink site can contain several crosslink events)
 - binding site: PURA binding site (5nt wide) as defined in the binding site definition below
 
+# See also
+
+- Busch et al. 2019 - "iCLIP data analysis: A complete pipeline from sequencing reads to RBP binding sites" https://doi.org/10.1016/j.ymeth.2019.11.008
+
 
