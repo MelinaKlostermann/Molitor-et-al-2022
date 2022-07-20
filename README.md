@@ -3,8 +3,9 @@
 We analysed PURA's in vivo binding behaviour to RNAs in iCLIP experiments. Theses scripts contain the R code used to
 
 * 1 Binding site definition and characterisation
-** Input: crosslinks in bw format, pureclip sites, Gencode Annotaiton (v31) as gtf
-** Output: crosslinks (bw_merges.rds), crossliks per sample (bw_all_samples.rds), binding sites (binding_sites.rds), filtered annotation (annotation.rds)
+
++ Input: crosslinks in bw format, pureclip sites, Gencode Annotaiton (v31) as gtf
++ Output: crosslinks (bw_merges.rds), crossliks per sample (bw_all_samples.rds), binding sites (binding_sites.rds), filtered annotation (annotation.rds)
 
 * 2 RNAseq changes in PURA knockdown
 ** Input: htseq count table, filtered annotation (annotation.rds)
