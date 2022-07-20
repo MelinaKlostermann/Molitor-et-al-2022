@@ -16,5 +16,4 @@ We analysed PURA's in vivo binding behaviour to RNAs in iCLIP experiments. These
 # See also
 
 - Busch et al. 2019 - "iCLIP data analysis: A complete pipeline from sequencing reads to RBP binding sites" https://doi.org/10.1016/j.ymeth.2019.11.008
-
-
+- Krakau, S., Richard, H. & Marsico, A. 2017 - "PureCLIP: capturing target-specific protein–RNA interaction footprints from single-nucleotide CLIP-seq data." https://doi.org/10.1186/s13059-017-1364-2
