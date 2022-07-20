@@ -7,3 +7,10 @@ We analysed PURA's in vivo binding behaviour to RNAs in iCLIP experiments. These
 * Compare the crosslink patterns in three different PURA iCLIP experiments 
 
 
+# Glossary
+
+- crosslink site: number of nucleotide that has been found crosslinked to PURA once or several times
+- crosslink events: number of crosslink events detected (one crosslink site can contain several crosslink events)
+- binding site: PURA binding site (5nt wide) as defined in the binding site definition below
+
+
