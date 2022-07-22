@@ -12,6 +12,8 @@ We analysed PURA's in vivo binding behaviour to RNAs in iCLIP experiments. These
 * Output: deseq anaysis (deseq.rds), count table with tpms (rnaseq_counts.rds)
 
 ## 3 Characterisation of PURA binding (HeLa, endogenous PURA)
+* Input:  binding sites (binding_sites.rds), filtered annotation (annotation.rds), crosslinks (bw_merges.rds), gff3 of annotation, count table with tpms (rnaseq_counts.rds)
+* Output: binding sites with additional infos (binding_sites_characterized.rds)
 
 ## 4 Comparison of the crosslink patterns in three different PURA iCLIP experiments from HeLa cells and NPC PURA iCLIP 
 
