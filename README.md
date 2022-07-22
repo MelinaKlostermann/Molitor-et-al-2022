@@ -25,9 +25,9 @@ We analysed PURA's in vivo binding behaviour to RNAs in iCLIP experiments. These
 
 ## 8 Reviewer figure: difference in proteomics results between ProteinDiscoverer and Maxquant
 
-## 9 Overlap of PURA binding with dendritic transcriptome
+## 9 Overlap of PURA binding with dendritic transcriptome  and with to p-body and stress granule enriched RNAs
 
-## 10 Overlap of PURA binding and RNA regualtion to p=body and stress granule enriched RNAs
+## 10 many Countplots 
 
 
 
