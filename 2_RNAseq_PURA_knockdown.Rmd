@@ -1,0 +1,295 @@
+---
+title: "2 RNAseq changes in PURA knockdown"
+author: "Melina"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  BiocStyle::html_document:
+    toc_float: TRUE
+    code_folding: hide
+    toc: TRUE
+vignette: >
+  %\VignetteIndexEntry{AS USP39 KD}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+require("knitr")
+knitr::opts_chunk$set(warning=FALSE, message=FALSE, cache=TRUE) #, fig.pos = "!H", out.extra = ""
+```
+
+```{r libraries, include=FALSE}
+library(knitr)
+library(tidyverse)
+library(ggpubr)
+library(biomaRt)
+library(DESeq2)
+library(hypeR)
+library(GenomicRanges)
+library(GenomicFeatures)
+
+
+report_color <- (pals::ocean.solar(15))
+source("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/XX-helpful-chunks/theme_paper.R")
+output_path <- "/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/"
+
+```
+
+# What was done?
+
+- DeSeq analysis of PURA knockdown vs control with 4 samples per condition. Genes with p < 0.01 are demed significant.
+- Gene names are retrived from biomart. 
+- GeneOntology and REACTOME enrichment analyses are performed.
+- TPMs are calcualted for later use with binding sites (see 3 Characterisation of binding sites)
+
+
+# Input
+```{r input}
+# RNAseq
+htSeq_dir <- "/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/03-RNAseq/00-htseq/htseq_antisense.out"
+
+# filtered annotation
+annotation <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/annotation.rds")
+
+```
+
+
+# Run DESeq on RNAseq data
+
+First DeSEq is run on the RNAseq count files to calculate foldchanges between all knockdown (kd) and control (wt). The htseq file also contains a overexpression (oe) condition that is not analysed for the manuscript.
+
+```{r deseq}
+######################
+# deSeq
+#####################
+htseq_matrix <- data.table::fread(htSeq_dir) %>% as.data.frame()
+rownames(htseq_matrix) <- htseq_matrix$`This is task 1`
+htseq_matrix$`This is task 1` <- NULL
+colnames(htseq_matrix) <- c("kd1", "kd2", "kd3", "kd4", "oe1", "oe2", "oe3", "oe4", "wt1", "wt2", "wt3", "wt4")
+
+
+condition_all <- c(rep("kd",4), rep("oe",4), rep("wt",4))
+sampleReplicate <- rep(paste("Rep",1:4, sep = "_"),3)
+sampleTable_all <- data.frame(sampleName = colnames(htseq_matrix),
+                          fileName = colnames(htseq_matrix),
+                          condition = condition_all,
+                          replicate = sampleReplicate)
+
+dds_DataSet <- DESeqDataSetFromMatrix(countData = htseq_matrix, colData = sampleTable_all, design = ~condition)
+
+dds_analysis <- DESeq(dds_DataSet, betaPrior =T) 
+rownames(dds_analysis) <- substr(rownames(dds_analysis),1,15)
+
+res_RNAseq_kd <- results(dds_analysis, contrast = c("condition", "kd", "wt"))%>% as.data.frame()
+res_RNAseq_kd$gene_id <- rownames(res_RNAseq_kd)
+
+
+
+```
+
+
+# Get HGNC symbol from BiomaRt
+
+```{r get_gene_names, eval=FALSE, include=T}
+
+#get names
+ensembl38p13 <- useMart(biomart='ENSEMBL_MART_ENSEMBL',
+                        dataset='hsapiens_gene_ensembl')
+
+my_attributes <- c("ensembl_gene_id", "hgnc_symbol")
+
+info_biomart_new<- getBM(attributes=my_attributes,
+                        filters = "ensembl_gene_id",
+                        values = substring(rownames(res_RNAseq_kd),1,15),
+                        mart = ensembl38p13, useCache = F)
+
+res_RNAseq_kd$gene_id <- substring(rownames(res_RNAseq_kd),1,15)
+idx_biomart_new <- match(res_RNAseq_kd$gene_id, info_biomart_new$ensembl_gene_id)
+res_RNAseq_kd <- cbind(res_RNAseq_kd, info_biomart_new[idx_biomart_new,])
+
+
+saveRDS(res_RNAseq_kd, "/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/deseq.rds")
+
+
+
+```
+
+# Vulcano plot
+
+```{r}
+res_RNAseq_kd <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/deseq.rds")
+
+# significantly changing
+p_cut <- 0.01
+
+length(unique(res_RNAseq_kd[res_RNAseq_kd$padj < p_cut,]$gene_id))
+
+ggplot(res_RNAseq_kd, aes(x=log2FoldChange, y=-log10(padj)))+
+  ggrastr::rasterise( geom_point(color ="grey", shape =1), dpi = 300)+
+   ggrastr::rasterise(geom_point(data = res_RNAseq_kd[(res_RNAseq_kd$padj< p_cut), ],
+              aes(x= log2FoldChange, y = (-log10(padj)))), dpi = 300)+
+   geom_point(data = res_RNAseq_kd[res_RNAseq_kd$hgnc_symbol%in% c("CTNNA1", "SQSTM1", "LSM14A", "CUX1", "DDX6", "GAPDH", "PURA", "PURB", "STARD7", "IL6ST", "DCP1A"),],
+              aes(x= log2FoldChange, y = -log10(padj)), color = "orange")+
+  ggrepel::geom_label_repel( data = res_RNAseq_kd[res_RNAseq_kd$hgnc_symbol %in% c("CTNNA1", "SQSTM1", "LSM14A", "CUX1", "DDX6", "GAPDH", "PURA", "PURB", "STARD7", "IL6ST", "DCP1A"),],
+  aes(x= log2FoldChange, y = -log10(padj),  label = hgnc_symbol ), max.overlaps = 15, size = 2) +
+  theme_paper()+
+   theme(legend.position = "none", aspect.ratio = 1/1)+
+  xlim(c(-3,3))
+
+```
+
+# Count plot PURA
+
+```{r}
+
+rna_matrix <- assay(dds_analysis)[,c("wt1", "wt2", "wt3", "wt4", "kd1", "kd2", "kd3", "kd4")] %>% rlog(.)
+
+pura_rna_counts <- rna_matrix["ENSG00000185129",] %>%
+  as.data.frame(.) %>%
+  rownames_to_column(.) %>%
+  reshape2::melt()
+
+pura_rna_counts$rowname <- factor(pura_rna_counts$rowname, levels = c("wt1", "wt2", "wt3", "wt4", "kd1", "kd2", "kd3", "kd4"))
+pura_rna_counts$group <- c(rep("wt", 4), rep("kd", 4))
+
+ggplot(pura_rna_counts, aes(x = rowname, y = value, color = group))+
+  geom_point()+
+  theme_paper()+
+  scale_color_manual(values = c("grey", "green"), breaks= c("wt", "kd"))+
+  ylim(c(8,10))+
+  theme(legend.position = "None")
+
+# ggsave(paste0(output_path, "pura_rna_counts.pdf"), height = 6, width = 5, units = "cm")
+
+
+```
+
+
+# Calculation of TPMs
+
+```{r}
+
+rnaseq_counts <- counts(dds_analysis) %>% as.data.frame()
+rnaseq_counts$gene_id <- substr(rownames(rnaseq_counts),1,15)
+
+# transcript length
+anno_txdb <- makeTxDbFromGRanges(annotation)
+transcript_length <- transcriptLengths(anno_txdb, with.cds_len = T)
+transcript_length_mean <- transcript_length %>%
+  dplyr::group_by(gene_id) %>%
+  summarise(transcript_length = mean(tx_len), .groups = "keep")
+transcript_length_mean$gene_id <- substr(transcript_length_mean$gene_id,1,15)
+
+# tpm for all samples
+rnaseq_counts <- rnaseq_counts %>% left_join(transcript_length_mean, by = "gene_id") %>%
+  mutate(
+    s1.rnaseq.tpm = wt1 / .$transcript_length,
+    s2.rnaseq.tpm = wt2 / .$transcript_length,
+    s3.rnaseq.tpm = wt3 / .$transcript_length,
+    s4.rnaseq.tpm = wt4 / .$transcript_length,
+
+    )
+
+
+# scaling factor values for samples 
+scaling_factor_2 <- rnaseq_counts[,c("s1.rnaseq.tpm", "s2.rnaseq.tpm", "s3.rnaseq.tpm", "s4.rnaseq.tpm" )] %>%
+  colSums(na.rm = T)
+scaling_factor_2 <- scaling_factor_2/1000000
+
+rnaseq_counts <- rnaseq_counts %>% mutate(
+    s1.rnaseq.tpm = s1.rnaseq.tpm / scaling_factor_2["s1.rnaseq.tpm"],
+    s2.rnaseq.tpm = s2.rnaseq.tpm / scaling_factor_2["s2.rnaseq.tpm"],
+    s3.rnaseq.tpm = s3.rnaseq.tpm / scaling_factor_2["s3.rnaseq.tpm"],
+    s4.rnaseq.tpm = s4.rnaseq.tpm  / scaling_factor_2["s4.rnaseq.tpm"]
+    )
+
+rnaseq_counts <- mutate(rnaseq_counts, mean_tpm_rnaseq = (s1.rnaseq.tpm + s2.rnaseq.tpm + s3.rnaseq.tpm + s4.rnaseq.tpm)/4)
+
+saveRDS(rnaseq_counts, paste0(output_path, "rnaseq_counts.rds") )
+
+```
+
+
+# GeneOntology & REACTOME
+
+```{r}
+
+reactome_geneset <- msigdb_gsets("Homo sapiens", "C2", "CP:REACTOME")
+cell_comp_geneset <- msigdb_gsets("Homo sapiens", "C5", "CC")
+
+# RNAseq sig
+res_sig_kd_list<- list( down = res_RNAseq_kd[res_RNAseq_kd$padj < p_cut & res_RNAseq_kd$log2FoldChange < 0,],
+                 up = res_RNAseq_kd[res_RNAseq_kd$padj < p_cut  & res_RNAseq_kd$log2FoldChange > 0,])
+
+bg = res_RNAseq_kd[res_RNAseq_kd$baseMean>0,]$hgnc_symbol
+
+hyps_reactome <-  purrr::map(res_sig_kd_list,  ~hypeR(.x$hgnc_symbol, reactome_geneset, test="hypergeometric", fdr=0.05, background = bg) )
+hyps_cell_comp <-  purrr::map(res_sig_kd_list,  ~hypeR(.x$hgnc_symbol, cell_comp_geneset, test="hypergeometric", fdr=0.05, background = bg) )
+
+hyps_list <- c(hyps_reactome, hyps_cell_comp)
+names(hyps_list) <- c(1:4)
+title_list <- c("Reactome: RNAseq PURA kd sig down",
+                "Reactome: RNAseq PURA kd sig up",
+                "GO-CC RNAseq PURA kd sig down",
+                "GO-CC RNAseq PURA kd sig up")
+
+
+
+##########################
+# customise reactome for paper
+#########################
+
+r_down = hyps_list[[1]]$data %>% mutate(group = "down", padj = p.adjust(pval))
+r_up = hyps_list[[2]]$data %>% mutate(group = "up",  padj = p.adjust(pval))
+
+reactome_go_cust <- rbind(r_down, r_up) %>% arrange(padj) %>% mutate(label = tolower(label), generatio = overlap/geneset)
+reactome_go_cust_print <- reactome_go_cust %>% as.data.frame()
+#xlsx::write.xlsx(reactome_go_cust_print, file =  paste0(output_path, "reactome_rnaseq_table.xlsx"))
+
+reactome_go_cust <- reactome_go_cust[reactome_go_cust$label %in% reactome_go_cust[1:20,]$label, ]
+
+ggplot(reactome_go_cust, aes(y = generatio, x = factor(label, level = rev(unique(label))), fill = fdr <0.01))+
+  geom_col()+
+  coord_flip()+
+  theme_paper()+
+  scale_fill_manual(values = setNames(c('blue','darkgrey'),c(T, F)))+
+  #scale_fill_steps(low = "blue", high = "grey", n.breaks = 20)+
+  facet_wrap(~group)+
+  scale_size(range = c(1, 3))
+
+#ggsave(paste0(output_path, Sys.Date(), "reactome_rnaseq_paper.pdf"), width = 17, height = 8, units = "cm")
+
+
+##########################
+# customise cellular components for paper
+#########################
+
+cc_down = hyps_list[[3]]$data %>% mutate(group = "down", padj = p.adjust(pval))
+cc_up = hyps_list[[4]]$data %>% mutate(group = "up",  padj = p.adjust(pval))
+
+cc_go_cust <- rbind(cc_down, cc_up) %>% arrange(padj) %>% mutate(label = tolower(label), generatio = overlap/geneset)
+cc_go_cust_print <- cc_go_cust %>% as.data.frame()
+#xlsx::write.xlsx(cc_go_cust_print, file =  paste0(output_path, "cc_rnaseq_table.xlsx"))
+
+cc_go_cust <- cc_go_cust[cc_go_cust$label %in% cc_go_cust[1:20,]$label, ]
+
+ggplot(cc_go_cust, aes(y = generatio, x = factor(label, level = rev(unique(label))), fill = fdr <0.01))+
+  geom_col()+
+  coord_flip()+
+  theme_paper()+
+  scale_fill_manual(values = setNames(c('blue','darkgrey'),c(T, F)))+
+  #scale_fill_steps(low = "blue", high = "grey", n.breaks = 20)+
+  facet_wrap(~group)+
+  scale_size(range = c(1, 3))
+
+#ggsave(paste0(output_path, Sys.Date(), "cc_rnaseq_paper.pdf"), width = 17, height = 8, units = "cm")
+
+```
+
+
+# Output
+
+- DeSeq analysis with HGNC symbol from Biomart (used in Combination of binding sites with RNAseq and Proteomics analysis of PURA kd)
+- TPM values (used in 3 Characterisation of Binding sites)
+- GO lists as supplementary tables
+

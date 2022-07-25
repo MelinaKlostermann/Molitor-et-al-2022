@@ -1,0 +1,214 @@
+---
+title: "6 Comparison of PURA RNA binding to expression changes in PURA knockdown "
+author: "Melina"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  BiocStyle::html_document:
+    toc_float: TRUE
+    code_folding: hide
+    toc: TRUE
+vignette: >
+  %\VignetteIndexEntry{AS USP39 KD}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+require("knitr")
+knitr::opts_chunk$set(warning=FALSE, message=FALSE, cache=TRUE) #, fig.pos = "!H", out.extra = ""
+```
+
+```{r libraries, include=FALSE}
+library(GenomicRanges)
+library(knitr)
+library(dplyr)
+library(ggpubr)
+library(DESeq2)
+library(purrr)
+
+report_color <- (pals::ocean.solar(15))
+source("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/XX-helpful-chunks/theme_paper.R")
+```
+
+# What was done?
+- Boxplot comparisons of RNA Fold changes between bound and unbound regions
+- coloring of vulcano by region of binding site
+
+# Input
+```{r}
+# binding sites
+BS <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/binding_sites_characterized.rds")
+
+# deseq analysis from PURA knockdown
+res_RNAseq <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/deseq.rds")
+
+```
+
+
+# Combine RNAseq and CLIP
+
+```{r}
+############################
+# combine RNAseq and both CLIPs
+###########################
+
+# strongest BS per gene
+strongest_Bs_bound_gene <- BS %>% as.data.frame(.) %>%
+  group_by(gene_id) %>%
+  arrange(desc(score), .by_group = T)%>%
+  dplyr::slice(1) %>% 
+  mutate(gene_id = substring(gene_id,1,15))
+
+
+
+
+# mark bound and unbound
+res_RNAseq_CLIP <- mutate(res_RNAseq, gene_id = substr(gene_id, 1, 15),
+                          CLIP_bound=case_when(gene_id %in% strongest_Bs_bound_gene$gene_id ~ "bound",
+                                                           T ~ "unbound"),
+                     changing = case_when(log2FoldChange==0 ~ F,
+                                          log2FoldChange==NA ~ F,
+                                          T~T))
+# add matching scores
+res_RNAseq_CLIP <- merge(res_RNAseq_CLIP, strongest_Bs_bound_gene, by = "gene_id", all.x=T)
+
+
+# remove unexpressed genes
+unexpressed_genes <- res_RNAseq_CLIP[res_RNAseq_CLIP$baseMean == 0,]
+
+# unexpressed genes that where bound? 
+unexpressed_genes_unbound <- unexpressed_genes[unexpressed_genes$CLIP_bound=="unbound",]
+unexpressed_genes_bound <- unexpressed_genes[unexpressed_genes$CLIP_bound=="bound",]
+# n number of bound "unexpressed " genes ( -> polyA selection)
+unexpressed_genes_bound %>% summarise(n_distinct(gene_id))
+
+# keep expressed as results
+res_RNAseq_CLIP <- res_RNAseq_CLIP[!(res_RNAseq_CLIP$gene_id %in% unexpressed_genes$gene_id),]
+# remove empty rows
+res_RNAseq_CLIP <- res_RNAseq_CLIP[!is.na(res_RNAseq_CLIP$baseMean),]
+
+
+# sign change
+res_RNAseq_CLIP <- res_RNAseq_CLIP %>%
+  mutate(sig.change = case_when(padj<=0.01 ~T,
+                                T~F))
+
+table(res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change==T,]$type)
+
+
+```
+
+# Boxplot comparison
+```{r}
+
+plot_box_all <- ggplot(res_RNAseq_CLIP, aes(x=CLIP_bound, y=log2FoldChange, fill = CLIP_bound))+
+  geom_boxplot()+
+  coord_cartesian(ylim = c(-3.5,3.5))+
+  ggpubr::stat_compare_means(method = "t.test", vjust = 4)+
+  stat_summary(fun = "mean", geom="point",colour="black", size=3) +
+  stat_summary(fun= "mean", geom="text", show.legend = FALSE, 
+               vjust=-1.3, hjust=-0.3, aes(label=round(..y.., digits=3)))+
+  theme_paper()+
+  scale_fill_manual(values= c("darkred", "grey"), name = "iClip Hit")+ 
+  geom_hline(yintercept = 0)
+
+plot_box_all
+#save(plot_box_all, file="/Users/melinaklostermann/Documents/PURA_oe_newpip/PURA_newpip/Report13-output/box_all.pdf")
+
+# boxplot regions 
+plot_box_region <- ggplot(res_RNAseq_CLIP[(res_RNAseq_CLIP$padj > 0.01),], aes(x=type, y=log2FoldChange, fill = type))+
+  geom_boxplot()+
+  theme_paper()+
+  scale_fill_manual(values= c("#2AB7CA", "darkred","orange", "purple", "grey"), name = "iClip Hit")+ 
+  geom_hline(yintercept = 0)
+
+plot_box_region
+
+```
+
+# Color vulcano by bound region
+
+```{r}
+####################
+# vulcanos with one type of BS colored each
+###################
+
+# 3"UTR
+ggplot()+ 
+  ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==F,],  aes(x=log2FoldChange, y= -log10(padj)), color = "grey", shape = 1, size = 0.5), dpi = 300)+
+  ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==T,], aes(x=log2FoldChange, y= -log10(padj),  ), size = 0.5), dpi = 300)+
+  ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==T & res_RNAseq_CLIP$type =="three_prime_UTR",], aes(x=log2FoldChange, y= -log10(padj)), color = "darkred", size = 0.5), dpi = 300)+
+  theme_bw()+
+  xlim(c(-2,2))+
+  ylim(c(0,40))+
+  theme_paper()
+
+#ggsave(paste0(output_path, "vulcano_3UTR.pdf"), width = 5, height = 5, units = "cm")
+
+
+# 5'UTR
+ggplot()+
+  ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==F,],  aes(x=log2FoldChange, y= -log10(padj)), color = "grey", shape = 1,  size = 0.5), dpi = 300)+
+  ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==T,], aes(x=log2FoldChange, y= -log10(padj)), size = 0.5), dpi = 300)+
+  ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==T & res_RNAseq_CLIP$type =="five_prime_UTR",], aes(x=log2FoldChange, y= -log10(padj)), color = "orange",  size = 0.5), dpi = 300)+
+  theme_bw()+
+  xlim(c(-2,2))+
+  ylim(c(0,40))+
+  theme_paper()
+
+#ggsave(paste0(output_path, "vulcano_5UTR.pdf"), width = 5, height = 5, units = "cm")
+
+# CDS
+ggplot()+
+  ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==F,],  aes(x=log2FoldChange, y= -log10(padj)), color = "grey", shape = 1,  size = 0.5), dpi = 300)+
+  ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==T,], aes(x=log2FoldChange, y= -log10(padj)), size = 0.5), dpi = 300)+
+  ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==T & res_RNAseq_CLIP$type =="CDS",], aes(x=log2FoldChange, y= -log10(padj)), color = "#2AB7CA",  size = 0.5), dpi = 300)+
+  theme_bw()+
+  xlim(c(-2,2))+
+  ylim(c(0,40))+
+  theme_paper()
+
+#ggsave(paste0(output_path, "vulcano_CDS.pdf"), width = 5, height = 5, units = "cm")
+
+# non coding
+ggplot()+
+  ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==F,],  aes(x=log2FoldChange, y= -log10(padj)), color = "grey", shape = 1,  size = 0.5), dpi = 300)+
+  ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==T,], aes(x=log2FoldChange, y= -log10(padj)), size = 0.5), dpi = 300)+
+  ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==T & res_RNAseq_CLIP$type =="no_region",], aes(x=log2FoldChange, y= -log10(padj)), color = "purple",  size = 0.5), dpi = 300)+
+  theme_bw()+
+  xlim(c(-2,2))+
+  ylim(c(0,40))+
+  theme_paper()
+
+#ggsave(paste0(output_path, "vulcano_non_cod.pdf"), width = 5, height = 5, units = "cm")
+
+# intron
+ggplot()+
+  ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==F,],  aes(x=log2FoldChange, y= -log10(padj)), color = "grey", shape = 1,  size = 0.5), dpi = 300)+
+  ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==T,], aes(x=log2FoldChange, y= -log10(padj)), size = 0.5), dpi = 300)+
+  ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==T & res_RNAseq_CLIP$type =="intron",], aes(x=log2FoldChange, y= -log10(padj)), color = "blue",  size = 0.5), dpi = 300)+
+  theme_bw()+
+  xlim(c(-2,2))+
+  ylim(c(0,40))+
+  theme_paper()
+
+#ggsave(paste0(output_path, "vulcano_intron.pdf"), width = 5, height = 5, units = "cm")
+
+# unbound
+
+ggplot()+
+  ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==F,],  aes(x=log2FoldChange, y= -log10(padj)), color = "grey", shape = 1,  size = 0.5), dpi = 300)+
+  ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==T,], aes(x=log2FoldChange, y= -log10(padj)), size = 0.5), dpi = 300)+
+  ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==T & res_RNAseq_CLIP$CLIP_bound == "unbound",], aes(x=log2FoldChange, y= -log10(padj)), color = "darkgreen",  size = 0.5), dpi = 300)+
+
+  theme_bw()+
+  xlim(c(-2,2))+
+  ylim(c(0,40))+
+  theme_paper()
+
+#ggsave(paste0(output_path, "vulcano_unbound.pdf"), width = 5, height = 5, units = "cm")
+
+
+
+
+```

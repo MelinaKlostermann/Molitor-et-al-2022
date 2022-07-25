@@ -1,0 +1,495 @@
+---
+title: "4 Comparison of the crosslink patterns in three different PURA iCLIP experiments from HeLa cells and NPC PURA iCLIP"
+author: "Melina"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  BiocStyle::html_document:
+    toc_float: TRUE
+    code_folding: hide
+    toc: TRUE
+vignette: >
+  %\VignetteIndexEntry{AS USP39 KD}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+require("knitr")
+knitr::opts_chunk$set(warning=FALSE, message=FALSE, cache=TRUE) #, fig.pos = "!H", out.extra = ""
+```
+
+```{r libraries, include=FALSE}
+library(GenomicRanges)
+library(rtracklayer)
+library(knitr)
+library(GenomicFeatures)
+library(dplyr)
+library(ggpubr)
+library(Gviz)
+library(purrr)
+library(wesanderson)
+library(ComplexHeatmap)
+library(BSgenome.Hsapiens.UCSC.hg38)
+
+
+report_color <- (pals::ocean.solar(15))
+
+outpath <- "/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/01-BS_def/02-BS_def_endo/Report59-output/"
+source("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/XX-helpful-chunks/theme_paper.R")
+```
+
+
+# What is done here?
+
+- Metaprofile of PURA binding in NPC cells (iCLIP experiment with low signal)
+- Some GVIZ plots of PUAR crosslinking patterns in HeLa snd NPC cells
+- Min max normalised spline smoothed heatmaps of crosslinks from endogenous PURA in Hela, and FLAG-PURA overexpression pulled down with two different antibodies (antiFALG & antiPURA)
+
+# Input
+
+```{r}
+# load BS with overlap annotation
+BS <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/binding_sites_characterized.rds")
+
+# crosslinks from NPC cells
+npc_cl_p_rle <- import.bw("/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_NPC_and_FLAG/imb_koenig_2020_17_koenig_iCLIP_PURA/merged/bw/imb_koenig_2020_17_NPC.v2uniqMD.duprm.plus.bw", as = "Rle")
+npc_cl_m_rle <- import.bw("/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_NPC_and_FLAG/imb_koenig_2020_17_koenig_iCLIP_PURA/merged/bw/imb_koenig_2020_17_NPC.v2uniqMD.duprm.minus.bw",  as = "Rle")
+
+npc_cl_p_gr <- import.bw("/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_NPC_and_FLAG/imb_koenig_2020_17_koenig_iCLIP_PURA/merged/bw/imb_koenig_2020_17_NPC.v2uniqMD.duprm.plus.bw")
+npc_cl_m_gr <- import.bw("/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_NPC_and_FLAG/imb_koenig_2020_17_koenig_iCLIP_PURA/merged/bw/imb_koenig_2020_17_NPC.v2uniqMD.duprm.minus.bw")
+
+# crosslinks from all three HeLa iCLIPs
+hela_cl_rle <- list(endo_p = import.bw("/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_endo/imb_koenig_2020_07_koenig_iCLIP_PURA_endogene/merged/bw/imb_koenig_2020_07_PURAendo.v2uniqMD.duprm.plus.bw", as = "Rle"),
+                endo_m = import.bw("/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_endo/imb_koenig_2020_07_koenig_iCLIP_PURA_endogene/merged/bw/imb_koenig_2020_07_PURAendo.v2uniqMD.duprm.minus.bw", as = "Rle"),
+                oe_pura_p = import.bw("/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/oe-imb_koenig_2019_11_koenig_iCLIP_PURA___v2uniqMD/merged/bw/imb_koenig_2019_11_allsamples.v2uniqMD.duprm.plus.bw", as = "Rle"),
+                oe_pura_m = import.bw("/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/oe-imb_koenig_2019_11_koenig_iCLIP_PURA___v2uniqMD/merged/bw/imb_koenig_2019_11_allsamples.v2uniqMD.duprm.minus.bw", as = "Rle"),
+                oe_flag_p = import.bw("/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_NPC_and_FLAG/imb_koenig_2020_17_koenig_iCLIP_PURA/merged/bw/imb_koenig_2020_17_flag.v2uniqMD.duprm.plus.bw", as = "Rle"),
+                oe_flag_m = import.bw("/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_NPC_and_FLAG/imb_koenig_2020_17_koenig_iCLIP_PURA/merged/bw/imb_koenig_2020_17_flag.v2uniqMD.duprm.minus.bw", as = "Rle"))
+
+# endo HeLa crosslinks for GVIZ plots
+hela_cl <- list(endo_p = import.bw("/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_endo/imb_koenig_2020_07_koenig_iCLIP_PURA_endogene/merged/bw/imb_koenig_2020_07_PURAendo.v2uniqMD.duprm.plus.bw"),
+                endo_m = import.bw("/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_endo/imb_koenig_2020_07_koenig_iCLIP_PURA_endogene/merged/bw/imb_koenig_2020_07_PURAendo.v2uniqMD.duprm.minus.bw"))
+
+# filtered annotation
+annotation <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/annotation.rds")
+anno_txdb <- makeTxDbFromGRanges(annotation)
+
+
+# setting for gviz plots 
+gen <- "hg38"
+cex <- 0.7
+cex.a <- 0.5
+
+
+```
+
+
+# Meta Profile NPC
+
+```{r meta_profile_npc, fig.height=5, fig.width=5}
+#############################
+# metaprofile of npc crosslinks in 15nt window on PURA BS
+###########################
+
+# enlarge BS
+BS_15nt <- as.data.frame(BS+10 )%>%
+  arrange(desc(score)) %>%
+  .[1:floor(NROW(BS)),] %>%
+  makeGRangesFromDataFrame(keep.extra.columns = T)
+
+npc_cl_p <- as.matrix(npc_cl_p_rle[BS_15nt[strand(BS_15nt) == "+"]])
+npc_cl_m <- as.matrix(npc_cl_m_rle[BS_15nt[strand(BS_15nt) == "-"]])
+npc_cl <- rbind(npc_cl_p, npc_cl_m) 
+
+# exclude windows with 0 NPC crosslinks
+ npc_cl_without_0 <- npc_cl[rowSums(npc_cl)!=0 ,] %>% # %>% 
+   as.data.frame()%>%
+   arrange(desc(rowSums(.))) %>%
+   as.matrix()
+
+# make heatmap
+col_fun <-  circlize::colorRamp2(c(0,10), c("white", "black"))
+line <- HeatmapAnnotation(crosslinks = anno_lines(colSums(npc_cl), height = unit(2, "cm"), ylim = c(0, 13000)))
+
+ht_opt$heatmap_column_names_gp = gpar(fontsize = 5)
+
+Heatmap(npc_cl_without_0[1:1000,], col =col_fun, cluster_columns = F, cluster_rows = F, top_annotation = line, use_raster = T, raster_device = "png", raster_quality = 10)
+
+
+# names afterwards added in affinity designer
+npc_cl_top_genes <- BS_15nt$gene_name
+npc_cl_top_genes[duplicated(npc_cl_top_genes)] <- ""
+
+npc_cl_top_genes
+
+```
+
+# GVIZ examples Hela endogenous PURA and NPC endogenous PURA crosslinking
+
+```{r}
+############################
+# function for GVIZ plots
+############################
+
+plotGviz <- function(GR, i, w,  cl_plus, cl_minus, name, anno, BS, color){
+  # get chromosome amd range, make data frame
+  chr<- as.character(seqnames(GR[i]))
+  df <- GR[i,] %>% as.data.frame
+  range <- GRanges(seqnames=chr, strand=strand(GR[i]),  ranges=IRanges(start= start(GR[i])-w[1], end = end(GR[i])+w[2])) 
+  
+  # make track of crosslinks depending on which strand
+  # cl_2
+  if(df$strand=="+"){
+    cl_at_region <- subsetByOverlaps(cl_plus, range) %>% keepStandardChromosomes()
+    dTrack <-
+      DataTrack(
+        cl_at_region,
+        genome = gen,
+        name = "cl endo",
+        type = "histogram", cex.title=cex, cex.axis= cex.a, background.title = "white", col.axis= "black", fontcolor = "black")
+  }else{
+    cl_at_region <- subsetByOverlaps(cl_minus, range) %>% keepStandardChromosomes()
+    dTrack <-
+      DataTrack(
+        cl_at_region,
+        genome = gen,
+        name = "cl_endo",
+        type = "histogram", cex.title=cex,  cex.axis= cex.a, background.title = "white", col.axis= "black", fontcolor = "black")
+  }
+  
+ if(df$strand=="+"){ 
+    seqTrack <- SequenceTrack(Hsapiens, chromosome=chr, complement = F)
+  }else{
+    seqTrack <-SequenceTrack(Hsapiens, chromosome=chr, complement = T)} 
+  
+  #pureclip track
+  BS_range <- BS[strand(BS)==strand(GR[i])] %>% subsetByOverlaps(.,GR[i]+w[1])
+
+  
+  BS_new_track <- GeneRegionTrack(BS_range, genome = gen, name="BS endo",cex.axis= cex.a,
+                                  col.histogram=report_color[13], fill=report_color[5], stacking="hide", rotation.title=0, cex.title=cex, background.title = "white", fontcolor = "black")
+  
+  
+  # track showing loaction
+  gtrack <- GenomeAxisTrack(cex.title= 2, add53 = T)
+  # annotation track
+  anno_track <- GeneRegionTrack(anno, genome = gen, chromosome = chr,
+                                name = "anno", fill = color, cex.title=cex, cex.axis= cex.a, stacking = "squish", background.title = "transparent", fontcolor = "black")
+  
+  plotTracks(list(dTrack, seqTrack, BS_new_track, anno_track, gtrack),
+               from = start(range), to = end(range),
+               chromosome=chr, sizes =c(5,1,1,1.5, 1), 
+               main= paste(GR[i]$gene_name, "-", chr, ":", start(range),"-", end(range)), cex.main = 1)
+}
+
+##########################
+# make GVIZ plots
+########################
+
+#=================================
+# Highest crosslinked regions in STARD7, SEC61A1, YWHAE  zoom-in endo. PURA HeLa
+#==================================
+
+regions_for_gviz_1 <- BS %>% 
+  as.data.frame(.) %>%
+  group_by(gene_id) %>%
+  arrange(desc(score), .by_group = T) %>% 
+  dplyr::slice(1) %>% 
+  ungroup %>%
+  filter(gene_name %in% c("STARD7", "SEC61A1", "YWHAE")) %>%
+  makeGRangesFromDataFrame(keep.extra.columns = T)
+
+# SEC61A1
+plotGviz(GR = regions_for_gviz_1[1]  , i = 1, w = c(150,150),  cl_plus =hela_cl[[1]], cl_minus = hela_cl[[2]], name = regions_for_gviz_1[1]$gene_name , anno = anno_txdb, BS = BS, color = "darkred")
+
+plotGviz(GR = regions_for_gviz_1[1]  , i = 1, w = c(150,150),  cl_plus = npc_cl_p_gr, cl_minus = npc_cl_m_gr, name = regions_for_gviz_1[1]$gene_name , anno = anno_txdb, BS = BS, color = "darkred")
+
+# STARD7
+plotGviz(GR = regions_for_gviz_1[2]  , i = 1, w = c(150,170),  cl_plus =hela_cl[[1]], cl_minus = hela_cl[[2]], name = regions_for_gviz_1[2]$gene_name , anno = anno_txdb, BS = BS, color = "darkred")
+
+plotGviz(GR = regions_for_gviz_1[2]  , i = 1, w = c(150,170),  cl_plus = npc_cl_p_gr, cl_minus = npc_cl_m_gr, name = regions_for_gviz_1[1]$gene_name , anno = anno_txdb, BS = BS, color = "darkred")
+
+# STARD7 whole 3'UTR
+plotGviz(GR = regions_for_gviz_1[2]  , i = 1, w = c(300,2000),  cl_plus =hela_cl[[1]], cl_minus = hela_cl[[2]], name = regions_for_gviz_1[2]$gene_name , anno = anno_txdb, BS = BS, color = "darkred")
+
+# YWHAE
+plotGviz(GR = regions_for_gviz_1[3]  , i = 1, w = c(150,170),  cl_plus =hela_cl[[1]], cl_minus = hela_cl[[2]], name = regions_for_gviz_1[3]$gene_name , anno = anno_txdb, BS = BS, color = "darkred")
+
+plotGviz(GR = regions_for_gviz_1[3]  , i = 1, w = c(150,170), cl_plus = npc_cl_p_gr, cl_minus = npc_cl_m_gr, name = regions_for_gviz_1[3]$gene_name , anno = anno_txdb, BS = BS, color = "darkred")
+
+
+#=================================
+# non-coding examples RN7SL1, MALAT1, NEAT1 
+#==================================
+regions_for_gviz_2 <- BS %>% 
+  as.data.frame(.) %>%
+  group_by(gene_id) %>%
+  arrange(desc(score), .by_group = T) %>% 
+  dplyr::slice(1) %>% 
+  ungroup %>%
+  filter(gene_id %in% c("ENSG00000251562", "ENSG00000245532", "ENSG00000276168" )) %>% # MALAT1
+  makeGRangesFromDataFrame(keep.extra.columns = T)
+
+# MALAT1
+plotGviz(GR = regions_for_gviz_2[2]  , i = 1, w = c(400,400),  cl_plus =hela_cl[[1]], cl_minus = hela_cl[[2]], name = regions_for_gviz_1[2]$gene_name , anno = anno_txdb, BS = BS, color = "darkred")
+
+# NEAT1
+plotGviz(GR = regions_for_gviz_2[1]  , i = 1, w = c(400,400),  cl_plus =hela_cl[[1]], cl_minus = hela_cl[[2]], name = regions_for_gviz_1[1]$gene_name , anno = anno_txdb, BS = BS, color = "darkred")
+
+# RN7SL1
+plotGviz(GR = regions_for_gviz_2[3]  , i = 1, w = c(200,100),  cl_plus =hela_cl[[1]], cl_minus = hela_cl[[2]], name = regions_for_gviz_1[3]$gene_name , anno = anno_txdb, BS = BS, color = "darkred")
+
+
+#=================================
+# RNA of p-body essential proteins: LSM14A, DDX6 (whole gene)
+#==================================
+regions_for_gviz_3 <- annotation[annotation$type == "gene"] %>% 
+  as.data.frame(.) %>%
+  filter(gene_name %in% c("LSM14A", "DDX6") | substr(gene_id,1,15) %in% c("ENSG00000283293")) %>%
+  makeGRangesFromDataFrame(keep.extra.columns = T)
+
+# LSM14A
+plotGviz(GR = regions_for_gviz_3[2]  , i = 1, w = c(0,0),  cl_plus =hela_cl[[1]], cl_minus = hela_cl[[2]], name = regions_for_gviz_1[2]$gene_name , anno = anno_txdb, BS = BS, color = "darkred")
+
+# DDX6
+plotGviz(GR = regions_for_gviz_3[1]  , i = 1, w = c(0,0),  cl_plus =hela_cl[[1]], cl_minus = hela_cl[[2]], name = regions_for_gviz_1[1]$gene_name , anno = anno_txdb, BS = BS, color = "darkred")
+
+
+#=================================
+# Bound regions tested in EMSAs
+#==================================
+# regions of seqeunces used for emsa
+regions_for_gviz_4 <- GRanges(c("chr2:96185058-96185112:-", "chr11:65441947-65441998:+", "chr5:86619374-86619444:+", "chr19:34221504-34221561:+") , gene_name = c("STARD7", "NEAT1", "COX7C", "LSM14A" ))
+
+# STARD7
+plotGviz(GR = regions_for_gviz_4[1]  , i = 1, w = c(0,0),  cl_plus =hela_cl[[1]], cl_minus = hela_cl[[2]], name = regions_for_gviz_1[1]$gene_name , anno = anno_txdb, BS = BS, color = "darkred")
+
+# NEAT1
+plotGviz(GR = regions_for_gviz_4[2]  , i = 1, w = c(0,0),  cl_plus =hela_cl[[1]], cl_minus = hela_cl[[2]], name = regions_for_gviz_4[2]$gene_name , anno = anno_txdb, BS = BS, color = "darkred")
+
+# SCOX7C
+plotGviz(GR = regions_for_gviz_4[3]  , i = 1, w = c(0,0),  cl_plus =hela_cl[[1]], cl_minus = hela_cl[[2]], name = regions_for_gviz_4[3]$gene_name , anno = anno_txdb, BS = BS, color = "darkred")
+
+#  LSM14A
+plotGviz(GR = regions_for_gviz_4[4]  , i = 1, w = c(0,0),  cl_plus =hela_cl[[1]], cl_minus = hela_cl[[2]], name = regions_for_gviz_4[4]$gene_name , anno = anno_txdb, BS = BS, color = "darkred")
+
+
+```
+
+# Compare three PURA HeLa CLIPs with spline smoothed maps
+
+```{r eval=FALSE, include=TRUE}
+### ===============================================
+###  Normalisation and spline smoothing of crosslink patterns
+### ===============================================
+# Note: this approach was adapted from Heyl & Backofen 2021 - "StoatyDive: Evaluation and classification of peak profiles for sequencing data"
+
+# min max normalisation
+min_max_noramlize <- function(x){
+  x_new <- (x-min(x)) / (max(x)-min(x)) 
+  return(x_new)
+}
+
+
+# smooth
+smoothing <- function(y, lambda, dim){
+  data_points <- length(y)
+  
+  # test if we have just a vector of constant values.
+  which(y != max(y))
+  if ( length(which(y != max(y))) != 0 ){
+    x <- c(1:data_points)
+    y.smooth <- smooth.spline(x, y, spar=lambda)
+    x_new <- seq(1, data_points, data_points/dim)
+    y_new <- predict(y.smooth, x_new)$y
+    y_new <- y_new/max(y_new)
+    return(y_new)
+  }else{ 
+    x_new <- seq(1, data_points, data_points/dim)
+    y_new <- rep( max(y), length(x_new) )
+    return(y_new)}
+}
+
+
+clean_smooth <- function(data_smoothed) {
+  
+  data_smoothed <- t(data_smoothed)
+  # get rid of negative values
+  data_smoothed[which(data_smoothed < 0)] = 0.0
+  
+  # get rid of diract impulses bigger than max (> 1.0)
+  data_smoothed[which(data_smoothed > 1.0)] = 1.0 
+  
+  return(data_smoothed)
+}
+```
+
+## in the beginning of 3'UTRs
+
+```{r eval=FALSE, include=TRUE}
+### ============================================
+###  Crosslink patterns at the start of 3'UTRs
+### ============================================
+
+# window at the beginning of the 3'UTR
+# select UTRs
+three_UTRs <- annotation[annotation$type=="three_prime_UTR"] 
+three_UTRs <- three_UTRs[!duplicated(three_UTRs$gene_id)]
+w = 300
+
+window <- three_UTRs
+end(window[strand(window)=="+"]) <- start(window[strand(window)=="+"])+300
+start(window[strand(window)=="-"]) <- end(window[strand(window)=="-"])-300
+
+
+cl_window <- c(map(hela_cl_rle[c(1,3,5)], ~.x[window[strand(window)=="+"]] %>% as.matrix() ),
+               map(hela_cl_rle[c(2,4,6)], ~.x[window[strand(window)=="-"]] %>% as.matrix() %>% .[,ncol(.):1] ))
+
+# select 3'UTRs with medium coverage
+cl_window_coverage_p <- map_dfc(cl_window[1:3], ~ rowSums(.x))
+cl_window_coverage_m <- map_dfc(cl_window[4:6], ~ rowSums(.x))
+
+cov_p <- map_dfc(cl_window_coverage_p, ~.x) %>% mutate(medium_cov =
+                                                            case_when( endo_p > 100 &
+                                                                        oe_pura_p > 100 &
+                                                                        oe_flag_p > 100 &
+                                                                        endo_p < 10^6 &
+                                                                        oe_pura_p < 10^6 &
+                                                                        oe_flag_p < 10^6 
+                                                                      ~ T,
+                                                                      T~F))
+cov_m <- map_dfc(cl_window_coverage_m, ~.x) %>% mutate(medium_cov =
+                                                            case_when( endo_m > 100 &
+                                                                        oe_pura_m > 100 &
+                                                                        oe_flag_m > 100 &
+                                                                        endo_m < 10^6 &
+                                                                        oe_pura_m < 10^6 &
+                                                                        oe_flag_m < 10^6 
+                                                                      ~ T,
+                                                                      T~F))
+
+
+cl_window <- c(map(cl_window[1:3], ~.x[cov_p$medium_cov,] ),
+               map(cl_window[4:6], ~.x[cov_m$medium_cov,] ))
+
+
+window_p <- window[strand(window)=="+"]
+window_m <- window[strand(window)=="-"]
+window <- c(window_p[cov_p$medium_cov], window_m[cov_m$medium_cov])
+
+
+cl_window <- list(endo = rbind(cl_window[[2]], cl_window[[5]]),
+                  oe  = rbind(cl_window[[1]], cl_window[[4]]),
+                  flag = rbind(cl_window[[3]], cl_window[[6]]))
+
+
+# normalise
+cl_window_normalized <- lapply(cl_window, function(x) apply(x, 1, min_max_noramlize) %>% t(.))
+
+
+# set NaNs to zero
+cl_window_normalized[[1]][which(is.na(cl_window_normalized[[1]]))] = 0
+cl_window_normalized[[2]][which(is.na(cl_window_normalized[[2]]))] = 0
+cl_window_normalized[[3]][which(is.na(cl_window_normalized[[3]]))] = 0
+
+# smoothing
+cl_window_norm_smooth <- lapply(cl_window_normalized,  apply, 1, function(x) smoothing(y=x, lambda = 0.5, dim =500))
+cl_window_norm_smooth <- lapply(cl_window_norm_smooth, function(x) clean_smooth(data_smoothed = x))  
+
+
+# heatmap of all three
+#cl_window_norm_smooth <- rbind(cl_window_norm_smooth$endo, cl_window_norm_smooth$oe, cl_window_norm_smooth$flag)
+h1 <- Heatmap(cl_window_norm_smooth[[1]], cluster_columns = F, use_raster = T, raster_device = "png", raster_quality = 10) 
+h2 <- Heatmap(cl_window_norm_smooth[[2]], cluster_columns = F, use_raster = T, raster_device = "png", raster_quality = 10) 
+h3 <- Heatmap(cl_window_norm_smooth[[3]], cluster_columns = F, use_raster = T, raster_device = "png", raster_quality = 10)  
+
+h1+h2+h3
+
+
+
+```
+
+## in the beginning of CDSs
+
+```{r eval=FALSE, include=TRUE}
+### ============================================
+###  Crosslink patterns at the start of CDS
+### ============================================
+
+# window at the beginning of the 3'UTR
+# select UTRs
+CDS <- annotation[annotation$type=="CDS"] 
+CDS <- CDS[!duplicated(three_UTRs$gene_id)]
+w = 300
+
+window <- CDS
+end(window[strand(window)=="+"]) <- start(window[strand(window)=="+"])+300
+start(window[strand(window)=="-"]) <- end(window[strand(window)=="-"])-300
+
+
+cl_window <- c(map(hela_cl_rle[c(1,3,5)], ~.x[window[strand(window)=="+"]] %>% as.matrix() ),
+               map(hela_cl_rle[c(2,4,6)], ~.x[window[strand(window)=="-"]] %>% as.matrix() %>% .[,ncol(.):1] ))
+
+# select 3'UTRs with medium coverage
+cl_window_coverage_p <- map_dfc(cl_window[1:3], ~ rowSums(.x))
+cl_window_coverage_m <- map_dfc(cl_window[4:6], ~ rowSums(.x))
+
+cov_p <- map_dfc(cl_window_coverage_p, ~.x) %>% mutate(medium_cov =
+                                                            case_when( endo_p > 100 &
+                                                                        oe_pura_p > 100 &
+                                                                        oe_flag_p > 100 &
+                                                                        endo_p < 10^6 &
+                                                                        oe_pura_p < 10^6 &
+                                                                        oe_flag_p < 10^6 
+                                                                      ~ T,
+                                                                      T~F))
+cov_m <- map_dfc(cl_window_coverage_m, ~.x) %>% mutate(medium_cov =
+                                                            case_when( endo_m > 100 &
+                                                                        oe_pura_m > 100 &
+                                                                        oe_flag_m > 100 &
+                                                                        endo_m < 10^6 &
+                                                                        oe_pura_m < 10^6 &
+                                                                        oe_flag_m < 10^6 
+                                                                      ~ T,
+                                                                      T~F))
+
+
+cl_window <- c(map(cl_window[1:3], ~.x[cov_p$medium_cov,] ),
+               map(cl_window[4:6], ~.x[cov_m$medium_cov,] ))
+
+
+window_p <- window[strand(window)=="+"]
+window_m <- window[strand(window)=="-"]
+window <- c(window_p[cov_p$medium_cov], window_m[cov_m$medium_cov])
+
+
+cl_window <- list(endo = rbind(cl_window[[2]], cl_window[[5]]),
+                  oe  = rbind(cl_window[[1]], cl_window[[4]]),
+                  flag = rbind(cl_window[[3]], cl_window[[6]]))
+
+
+# normalise
+cl_window_normalized <- lapply(cl_window, function(x) apply(x, 1, min_max_noramlize) %>% t(.))
+
+
+# set NaNs to zero
+cl_window_normalized[[1]][which(is.na(cl_window_normalized[[1]]))] = 0
+cl_window_normalized[[2]][which(is.na(cl_window_normalized[[2]]))] = 0
+cl_window_normalized[[3]][which(is.na(cl_window_normalized[[3]]))] = 0
+
+# smoothing
+cl_window_norm_smooth <- lapply(cl_window_normalized,  apply, 1, function(x) smoothing(y=x, lambda = 0.5, dim =500))
+cl_window_norm_smooth <- lapply(cl_window_norm_smooth, function(x) clean_smooth(data_smoothed = x))  
+
+
+# heatmap of all three
+#cl_window_norm_smooth <- rbind(cl_window_norm_smooth$endo, cl_window_norm_smooth$oe, cl_window_norm_smooth$flag)
+h1 <- Heatmap(cl_window_norm_smooth[[1]], cluster_columns = F, use_raster = T, raster_device = "png", raster_quality = 10) 
+h2 <- Heatmap(cl_window_norm_smooth[[2]], cluster_columns = F, use_raster = T, raster_device = "png", raster_quality = 10) 
+h3 <- Heatmap(cl_window_norm_smooth[[3]], cluster_columns = F, use_raster = T, raster_device = "png", raster_quality = 10)  
+
+h1+h2+h3
+
+
+
+```

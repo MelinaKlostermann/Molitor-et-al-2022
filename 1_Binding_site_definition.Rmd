@@ -1,0 +1,546 @@
+---
+title: "1 Binding site definition and characterisation"
+author: "Melina"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  BiocStyle::html_document:
+    toc_float: TRUE
+    code_folding: hide
+    toc: TRUE
+vignette: >
+  %\VignetteIndexEntry{AS USP39 KD}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, results = TRUE)
+```
+
+
+# What was done?
+
+- The gencode annotation retrieved as gtf file is filtered for standard chromosomes. Transcripts with transcript support level <=3 or NA are only kept if no other transcript of the same gene with a higher levels exists.
+- PURA binding sites are defined from the PURA iCLIP experiments with endogenous PURA expression in HeLa cells. 
+- Reproducibility of binding sites between samples
+
+
+# Glossary
+
+- crosslink site: nucleotide that has been found crosslinked to PURA once or several times
+- crosslink events: crosslink events detected (one crosslink site can contain several crosslink events)
+- pureclip site: nucleotide bound, as calculated from PureCLIP 
+- binding site: PURA binding site (5nt wide) as defined in the binding site definition below
+
+```{r}
+library(GenomicRanges)
+library(rtracklayer)
+library(knitr)
+library(GenomicFeatures)
+library(dplyr)
+library(ggpubr)
+library(Gviz)
+library(biomaRt)
+
+report_color <- (pals::ocean.solar(15))
+source("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/XX-helpful-chunks/theme_paper.R")
+```
+
+
+# Input
+
+```{r echo=TRUE}
+# bigwig files of crosslink events (all 4 samples merged)
+
+bw_all_plus_path <-
+  "/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_endo/imb_koenig_2020_07_koenig_iCLIP_PURA_endogene/merged/bw/imb_koenig_2020_07_PURAendo.v2uniqMD.duprm.plus.bw"
+bw_all_minus_path <-
+  "/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_endo/imb_koenig_2020_07_koenig_iCLIP_PURA_endogene/merged/bw/imb_koenig_2020_07_PURAendo.v2uniqMD.duprm.minus.bw"
+
+# bigwig files of crosslink events (all 4 samples separate)
+# single samples
+
+bw_1_plus_path <-
+  "/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_endo/imb_koenig_2020_07_koenig_iCLIP_PURA_endogene/bw/all/DR/imb_koenig_2020_07_PURAendo_1.v2uniqMD.duprm.plus.bw"
+bw_1_minus_path <- 
+  "/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_endo/imb_koenig_2020_07_koenig_iCLIP_PURA_endogene/bw/all/DR/imb_koenig_2020_07_PURAendo_1.v2uniqMD.duprm.minus.bw"
+
+bw_2_plus_path <-
+  "/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_endo/imb_koenig_2020_07_koenig_iCLIP_PURA_endogene/bw/all/DR/imb_koenig_2020_07_PURAendo_2.v2uniqMD.duprm.plus.bw"
+bw_2_minus_path  <- 
+  "/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_endo/imb_koenig_2020_07_koenig_iCLIP_PURA_endogene/bw/all/DR/imb_koenig_2020_07_PURAendo_2.v2uniqMD.duprm.minus.bw"
+
+bw_3_plus_path  <-
+  "/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_endo/imb_koenig_2020_07_koenig_iCLIP_PURA_endogene/bw/all/DR/imb_koenig_2020_07_PURAendo_3.v2uniqMD.duprm.plus.bw"
+bw_3_minus_path <-
+  "/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_endo/imb_koenig_2020_07_koenig_iCLIP_PURA_endogene/bw/all/DR/imb_koenig_2020_07_PURAendo_3.v2uniqMD.duprm.minus.bw"
+
+bw_4_plus_path <-
+  "/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_endo/imb_koenig_2020_07_koenig_iCLIP_PURA_endogene/bw/all/DR/imb_koenig_2020_07_PURAendo_7.v2uniqMD.duprm.plus.bw"
+bw_4_minus_path <-
+  "/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_endo/imb_koenig_2020_07_koenig_iCLIP_PURA_endogene/bw/all/DR/imb_koenig_2020_07_PURAendo_7.v2uniqMD.duprm.minus.bw"
+
+
+
+# PureCLIP calls (obtained by running PureCLIP on pseudo-samples 1u2 and 3u4 see below)
+
+pureclip_path <- "/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_endo/PureCLIP/peakcalling_pura_endo_sites.bed"
+
+# gene annotation (gencode annotation v31)
+
+mygft <-"/Users/melinaklostermann/Documents/projects/anno/GENCODEv31-p12/gencode.v31.annotation.gff3"
+
+
+```
+
+# Preprocess input files
+
+```{r}
+################################
+# Import crosllink files
+###############################
+bw_1_plus <- import.bw(bw_1_plus_path)
+bw_1_minus <- import.bw(bw_1_minus_path)
+
+strand(bw_1_plus) <- "+"
+strand(bw_1_minus) <- "-"
+
+bw_2_plus <- import.bw(bw_2_plus_path)
+bw_2_minus <- import.bw(bw_2_minus_path)
+
+strand(bw_2_plus) <- "+"
+strand(bw_2_minus) <- "-"
+
+bw_3_plus <- import.bw(bw_3_plus_path)
+bw_3_minus <- import.bw(bw_3_minus_path)
+
+strand(bw_3_plus) <- "+"
+strand(bw_3_minus) <- "-"
+
+bw_4_plus <- import.bw(bw_4_plus_path)
+bw_4_minus <- import.bw(bw_4_minus_path)
+
+strand(bw_4_plus) <- "+"
+strand(bw_4_minus) <- "-"
+
+bw_all_plus <- import.bw(bw_all_plus_path)
+bw_all_minus <- import.bw(bw_all_minus_path)
+
+strand(bw_all_plus) <- "+"
+strand(bw_all_minus) <- "-"
+
+
+################################
+# Split crosslinks to 1-nt events
+################################
+split_bw_crosslinks_to_1_nt <- function(bw){
+  # split ranges in 1 nt events
+  bw_split <- exomeCopy::subdivideGRanges(bw, subsize=1)
+  # match scores by an overlap index
+  idx <- findOverlaps(bw_split, bw)
+  # add scores
+  bw_split$score <- bw[subjectHits(idx)]$score
+  # read strand info
+  strand(bw_split) <- strand(bw)
+  return(bw_split)
+}
+
+bw_all_samples <- list(bw_1_plus, bw_1_minus, bw_2_plus, bw_2_minus, bw_3_plus, bw_3_minus, bw_4_plus, bw_4_minus) %>%
+  lapply(., function(x) split_bw_crosslinks_to_1_nt(bw=x)) %>%
+  lapply(., function(x) keepStandardChromosomes(x, pruning.mode = "coarse"))
+
+bw_merges <- list(bw_all_plus, bw_all_minus) %>% lapply(., function(x) split_bw_crosslinks_to_1_nt(bw=x)) %>%
+  lapply(., function(x) keepStandardChromosomes(x, pruning.mode = "coarse"))
+
+########################################
+# Load and filter Gencode annotation
+#######################################
+
+filter_gft_anno <- function(gft_anno, standard_chrom, protein_coding, include_GL_3, longest_transcript){
+  library(GenomicRanges)
+  library(dplyr)
+  library(GenomicFeatures)
+  
+  # load gft
+  gft <- rtracklayer::import(gft_anno)
+  
+  # standard chromosomes
+  if(standard_chrom == T){
+    gft <-keepStandardChromosomes(gft, pruning.mode = "coarse")
+  }
+  
+  # protein-coding transcripts
+  if(protein_coding == T){
+    gft <- gft[gft$gene_type=="protein_coding"]
+    gft <- c(gft[gft$type!="gene" & gft$transcript_type=="protein_coding"], gft[gft$type=="gene"])
+  }
+  
+  # gene level 1 or 2
+  gft_GL<- gft[gft$level <= 2]
+  
+  # gene level 3
+  if(include_GL_3==T){
+    gft_GL3 <- gft[gft$level==3 & !(gft$gene_id %in% gft_GL$gene_id)]    
+    gft_GL <- c(gft_GL, gft_GL3)  
+  }
+  
+  # transcript support level <=3 or NA
+  gft_GL_TL <-gft_GL[!is.na(gft_GL$transcript_support_level) & gft_GL$transcript_support_level <= 3]
+  gft_TL_NA <- gft_GL[is.na(gft_GL$transcript_support_level)]
+  gft_Transcripts <- c(gft_GL_TL, gft_TL_NA[!(gft_TL_NA$gene_id %in% gft_GL_TL$gene_id)])
+  gft_gen_trans <- c(gft_Transcripts, gft_GL[gft_GL$type=="gene"]) # readd genes (have transcript support level NA)
+  
+  # longest transcript
+  if(longest_transcript==T){
+    # use genomicfeatures file to get information about transcript length (sum of exons)
+    gft_GenFeat<- makeTxDbFromGRanges(gft_gen_trans)
+    transcriptLength <- transcriptLengths(gft_GenFeat)
+    
+    # add transcript_length to granges
+    gft_GL_TL_dframe <- as.data.frame(gft_gen_trans)
+    gft_with_tx_len <- merge(transcriptLength[, c("tx_name", "tx_len")], gft_GL_TL_dframe, by.x ="tx_name", by.y = "transcript_id",
+                             all.y = TRUE)
+    
+    gft_longestTranscript <- gft_with_tx_len[gft_with_tx_len$type == "transcript", ] %>%
+      dplyr::group_by(.$gene_id) %>%
+      dplyr::arrange(dplyr::desc(.$tx_len)) %>%
+      dplyr::slice(1) %>%
+      ungroup()
+    
+    gft_regions_longestTranscript <- gft_gen_trans[gft_gen_trans$transcript_id %in% gft_longestTranscript$tx_name]
+    gft_region_genes_LT <- c(gft_regions_longestTranscript, gft_gen_trans[gft_gen_trans$type=="gene" & gft_gen_trans$gene_id %in% gft_regions_longestTranscript$gene_id])
+    gft_gen_trans <- gft_region_genes_LT
+  }
+  return(gft_gen_trans)
+}
+
+annotation <- filter_gft_anno(gft_anno = mygft,
+                              standard_chrom = T, 
+                              protein_coding = F, 
+                              include_GL_3 = T, 
+                              longest_transcript = F)
+
+
+
+
+########################
+# Get PureCLIP output
+#########################
+pureclip_sites <- import(pureclip_path, format = "bedgraph") %>% 
+  keepStandardChromosomes(., pruning.mode = "coarse")
+
+# clean up columns
+pureclip_sites <- as.data.frame(pureclip_sites) %>% makeGRangesFromDataFrame(keep.extra.columns = T)
+pureclip_sites$NA.2 <- NULL
+pureclip_sites$score <- pureclip_sites$NA.
+pureclip_sites$NA. <- NULL
+strand(pureclip_sites) <- pureclip_sites$NA.1
+pureclip_sites$NA.1 <- NULL
+pureclip_sites$round_score <- round(pureclip_sites$score, digits = 1)
+
+pureclip_sites <- keepStandardChromosomes(pureclip_sites, pruning.mode = "coarse")
+
+```
+
+# Definition of binding sites
+
+Note: Adapted from Busch et al. 2019 - "iCLIP data analysis: A complete pipeline from sequencing reads to RBP binding sites"
+
+```{r}
+############################
+# Make 5-nt binding sites
+###########################
+Define_Binding_Sites <- function(pureclip, bw_plus, bw_minus, windowsize, out){
+  
+  # merge gaps < 8 from single PureCLIP sites
+  pureclip = GenomicRanges::reduce(pureclip, min.gapwidth = 8)
+  
+  # remove sites with 1 or 2 nt length
+  pureclip = pureclip[width(pureclip) > 2]
+  
+  
+  bw_plus = import.bw(bw_plus, as="Rle")
+  bw_minus = import.bw(bw_minus, as= "Rle")
+  
+  
+  
+  final.peaks.plus.gr <- GRanges()
+  final.peaks.minus.gr <- GRanges()
+  
+  
+  # initialize the remaining PureCLIP CL regions to check for peaks
+  remaining.regions.plus.gr <- subset(pureclip, strand == "+")
+  remaining.regions.minus.gr <- subset(pureclip, strand == "-")
+  
+  window.radius <- (windowsize-1)/2
+  while(TRUE){
+    
+    # no regions left to check for peaks
+    if (length(remaining.regions.plus.gr) == 0 & length(remaining.regions.minus.gr) == 0){
+      break
+    }
+    
+    if (length(remaining.regions.plus.gr) != 0 ){
+      # get the raw CL counts in the remaining PureCLIP CL regions
+      # returns rle list of all regions and turns it into matrix
+      raw.remaining.PureCLIP.CL.regions.plus.m <- as.matrix(bw_plus[remaining.regions.plus.gr])
+      
+      # identify the center of the PureCLIP CL regions (position with max counts)
+      # and store its index
+      raw.remaining.PureCLIP.CL.regions.plus.m[
+        is.na(raw.remaining.PureCLIP.CL.regions.plus.m)] <- -Inf # set Na to -infinite
+      max.pos.indice.plus <- max.col(raw.remaining.PureCLIP.CL.regions.plus.m, 
+                                     ties.method = "first")
+      
+      
+      # create a peak region of 9 nt that is centered to the max position
+      peaks.plus.gr <- remaining.regions.plus.gr
+      start(peaks.plus.gr) <- start(peaks.plus.gr) + max.pos.indice.plus - 1
+      end(peaks.plus.gr) <- start(peaks.plus.gr)
+      peaks.plus.gr <- peaks.plus.gr + window.radius
+      
+      
+      # store the new peaks
+      final.peaks.plus.gr <- c(final.peaks.plus.gr, peaks.plus.gr)
+      
+      # remove the peaks from the CL regions to search for additional peaks
+      # excise additionally 4 nucleotides up and downstream
+      peaks.plus.grl <- as(peaks.plus.gr+window.radius, "GRangesList")
+      
+      remaining.regions.plus.gr <- unlist(psetdiff(remaining.regions.plus.gr, peaks.plus.grl))
+    }
+    if (length(remaining.regions.minus.gr) != 0 ){
+      # get the raw CL counts in the remaining PureCLIP CL regions
+      # returns rle list of all regions and turns it into matrix
+      raw.remaining.PureCLIP.CL.regions.minus.m <- as.matrix(
+        bw_minus[remaining.regions.minus.gr])
+      
+      # identify the center of the PureCLIP CL regions (position with max counts) 
+      # and store its indice
+      raw.remaining.PureCLIP.CL.regions.minus.m[
+        is.na(raw.remaining.PureCLIP.CL.regions.minus.m)] <- -Inf
+      max.pos.indice.minus <- max.col(raw.remaining.PureCLIP.CL.regions.minus.m, ties.method = "last")
+      
+      # create a peak region of 9nt that is centered to the max position
+      peaks.minus.gr <- remaining.regions.minus.gr
+      start(peaks.minus.gr) <- start(peaks.minus.gr) + max.pos.indice.minus - 1
+      end(peaks.minus.gr) <- start(peaks.minus.gr)
+      peaks.minus.gr <- peaks.minus.gr + window.radius
+      
+      # store the new peaks
+      final.peaks.minus.gr <- c(final.peaks.minus.gr, peaks.minus.gr)
+      
+      # remove the peaks from the CL regions to search for additional peaks
+      # excise additionally 4 nucleotides up and downstream
+      peaks.minus.grl <- as(peaks.minus.gr+window.radius, "GRangesList")
+      
+      remaining.regions.minus.gr <- unlist(psetdiff(remaining.regions.minus.gr,
+                                                    peaks.minus.grl))
+    }
+  }
+  export(final.peaks.plus.gr, 
+         con= paste(out,"_plus.bed", sep = ""), 
+         format = "bed")
+  export(final.peaks.minus.gr, 
+         con= paste(out,"_minus.bed", sep = ""), 
+         format = "bed")
+  # save(final.peaks.minus.gr, file= paste(out,"_plus.RData", sep = ""))
+  # save(final.peaks.plus.gr, file= paste(out,"_minus.RData", sep = ""))
+  
+  returnlist <- list(peaks.minus = final.peaks.minus.gr, peaks.plus = final.peaks.plus.gr)
+  return(returnlist)
+}
+
+
+binding_sites <- Define_Binding_Sites(pureclip = pureclip_sites, 
+                                      bw_plus = bw_all_plus_path, 
+                                      bw_minus = bw_all_minus_path,
+                                      windowsize = 5, # windowsize - size that binding sites should have 
+                                      out =  "./Binding_site_windows_5nt" )
+
+
+
+############################
+# Keep only BS with PureCLIP center
+############################
+# get all BS
+binding_sites <- c(binding_sites$peaks.plus, binding_sites$peaks.minus)
+# get centers
+BS_centers <- binding_sites - 2
+
+# keep only overlaps with PureCLIP sites
+pureclip_sites_anno_bw_SOB <- makeGRangesFromDataFrame(pureclip_sites, 
+                                                       keep.extra.columns = TRUE)
+binding_sites_center_PS <- binding_sites[queryHits(findOverlaps(
+  BS_centers, pureclip_sites))]
+
+binding_sites_center_PS$score <- pureclip_sites[subjectHits(findOverlaps(
+  BS_centers, pureclip_sites))]$score
+
+
+
+###########################
+# Keep only BS with max PureCLIP site at center
+##########################
+# get bw rles
+bw_plus_rle <- import.bw(bw_all_plus_path, as="Rle")
+bw_minus_rle <- import.bw(bw_all_minus_path, as="Rle")
+
+# split BS by strand
+binding_sites_center_PS_plus <- binding_sites_center_PS[strand(binding_sites_center_PS)=="+"]
+binding_sites_center_PS_minus <- binding_sites_center_PS[strand(binding_sites_center_PS)=="-"]
+
+# make matrix of BS
+binding_sites_center_PS_plus_m <- as.matrix(bw_plus_rle[binding_sites_center_PS_plus])
+binding_sites_center_PS_minus_m <- as.matrix(bw_minus_rle[binding_sites_center_PS_minus])
+
+# calculate max for each BS (one BS is one row in the matrix)
+max_BS_plus <- apply(binding_sites_center_PS_plus_m,1,max)
+max_BS_minus <- apply(binding_sites_center_PS_minus_m,1,max)
+
+# subset for center = max
+binding_sites_center_PSmax_plus <- binding_sites_center_PS_plus[
+  max_BS_plus == binding_sites_center_PS_plus_m[,3]] 
+binding_sites_center_PSmax_minus <- binding_sites_center_PS_minus[
+  max_BS_minus == binding_sites_center_PS_minus_m[,3]]
+
+
+
+###########################
+# Keep only BS with at least 2 crosslink sites
+############################
+binding_sites_center_PSmax_plus_m <- as.matrix(bw_plus_rle[binding_sites_center_PSmax_plus])
+binding_sites_center_PSmax_minus_m <- as.matrix(bw_minus_rle[binding_sites_center_PSmax_minus])
+
+crosslink_sites_plus <- apply(binding_sites_center_PSmax_plus_m, 1, function(x) 5-sum(x == 0)) 
+crosslink_sites_minus <- apply(binding_sites_center_PSmax_minus_m, 1, function(x) 5-sum(x == 0)) 
+
+
+binding_sites_center_PSmax_plus_2cl <- binding_sites_center_PSmax_plus[crosslink_sites_plus > 1]
+binding_sites_center_PSmax_minus_2cl <- binding_sites_center_PSmax_minus[crosslink_sites_minus > 1]
+
+binding_sites_final <- c(binding_sites_center_PSmax_plus_2cl , binding_sites_center_PSmax_minus_2cl ) %>%
+  keepStandardChromosomes(pruning.mode = "coarse")
+
+```
+
+
+# Sample reproducibility
+
+```{r}
+# get bw's as rles
+sample1.minus.rle <- import.bw( bw_1_minus_path, as="Rle") %>% keepStandardChromosomes(pruning.mode = "coarse")
+sample2.minus.rle <- import.bw( bw_2_minus_path, as="Rle") %>% keepStandardChromosomes(pruning.mode = "coarse")
+sample3.minus.rle <- import.bw( bw_3_minus_path, as="Rle") %>% keepStandardChromosomes(pruning.mode = "coarse")
+sample4.minus.rle <- import.bw( bw_4_minus_path, as="Rle") %>% keepStandardChromosomes(pruning.mode = "coarse")
+
+sample1.plus.rle <- import.bw( bw_1_plus_path, as="Rle") %>% keepStandardChromosomes(pruning.mode = "coarse")
+sample2.plus.rle <- import.bw( bw_2_plus_path, as="Rle") %>% keepStandardChromosomes(pruning.mode = "coarse")
+sample3.plus.rle <- import.bw( bw_3_plus_path, as="Rle") %>% keepStandardChromosomes(pruning.mode = "coarse")
+sample4.plus.rle <- import.bw( bw_4_plus_path, as="Rle") %>% keepStandardChromosomes(pruning.mode = "coarse")
+
+# sum up cl events per binding site 
+bs.p = binding_sites_final[strand(binding_sites_final) == "+"]
+bs.p$clp_rep1 = sample1.plus.rle[bs.p] %>% sum
+bs.p$clp_rep2 = sample2.plus.rle[bs.p] %>% sum
+bs.p$clp_rep3 = sample3.plus.rle[bs.p] %>% sum
+bs.p$clp_rep4 = sample4.plus.rle[bs.p] %>% sum
+
+
+bs.m = binding_sites_final[strand(binding_sites_final) == "-"]
+bs.m$clp_rep1 = sample1.minus.rle[bs.m] %>% sum
+bs.m$clp_rep2 = sample2.minus.rle[bs.m] %>% sum
+bs.m$clp_rep3 = sample3.minus.rle[bs.m] %>% sum
+bs.m$clp_rep4 = sample4.minus.rle[bs.m] %>% sum
+
+# combine
+binding_sites = c(bs.p, bs.m)
+
+
+###########################################
+# Overlap of binding sites between samples
+###########################################
+binding_sites$names <-  1:length(binding_sites)
+UpSet_List_cutoff20 = list(rep1 = binding_sites[binding_sites$clp_rep1> 0]$names,
+                           rep2 = binding_sites[binding_sites$clp_rep2> 0]$names,
+                           rep3 = binding_sites[binding_sites$clp_rep3> 0]$names,
+                           rep4 = binding_sites[binding_sites$clp_rep4> 0]$names)
+
+UpSetR::upset(UpSetR::fromList(UpSet_List_cutoff20), order.by = c("degree","freq"), nsets = 4)
+grid.text("Overlap of binding sites between the 4 samples", x = 0.65, y=0.95, gp=gpar(fontsize=16))
+
+
+
+#######################################################
+# Scatterplot of crosslinks per binding site per sample
+#######################################################
+repro_df <- data.frame(s1 = binding_sites$clp_rep1,
+                      s2 = binding_sites$clp_rep2,
+                      s3 = binding_sites$clp_rep3,
+                      s4 = binding_sites$clp_rep4) 
+
+repro_scatter_df <- repro_df[,1:4] %>% mutate(s1 = log2(s1), s2 = log2(s2), s3=log2(s3), s4=log2(s4)) %>%
+  mutate(s1 = case_when(s1== -Inf ~ 0, T ~ s1),
+         s2 = case_when(s2== -Inf ~ 0, T ~ s2),
+         s3 = case_when(s3== -Inf ~ 0, T ~ s3),
+         s4 = case_when(s4== -Inf ~ 0, T ~ s4))
+
+scatter_fn <- function(data, mapping, ...){
+  p <- ggplot(data = data, mapping = mapping) + 
+    ggrastr::rasterise( geom_point(), dpi = 300) +
+    ggrastr::rasterise(stat_density2d(aes(fill=..level..), geom="polygon"), dpi = 300) +
+    scale_fill_gradientn(colours=report_color) +
+    coord_cartesian(xlim = c(0,12.5), ylim = c(0,12.5))+
+    geom_abline(slope=1, colour = "darkgrey", linetype="dashed")
+  p
+}
+
+cor_fun <- function(data, mapping, method="pearson", ndp=2, sz=3, stars=T, ...){
+  
+  x <- GGally::eval_data_col(data, mapping$x)
+  y <- GGally::eval_data_col(data, mapping$y)
+  
+  corr <- cor.test(x, y, method=method)
+  est <- corr$estimate
+  lb.size <- sz* abs(est) 
+  
+  if(stars){
+    stars <- c("***", "**", "*", "")[findInterval(corr$p.value, c(0, 0.001, 0.01, 0.05, 1))]
+    lbl <- paste0(method, ": ", round(est, ndp), stars)
+  }else{
+    lbl <- round(est, ndp)
+  }
+  
+  ggplot(data=data, mapping=mapping) + 
+    annotate("text", label=lbl, x= 6, y= 6, size=lb.size,...)+
+    theme(panel.grid = element_blank())
+}
+
+
+GGally::ggpairs(repro_scatter_df, upper = list(continuous = cor_fun), lower = list(continuous = scatter_fn), title = "Reproducability matrix - comparisons of 2 samples")+
+  theme_bw()
+
+```
+
+# Output
+
+- crosslinks: bw_merges.rds
+- crossliks per sample: bw_all_samples.rds
+
+- binding sites: binding_sites.rds
+-filtered annotation: annotation.rds
+
+```{r eval=FALSE, include=FALSE}
+
+# crosslinks (endogenous PURA, HeLa cells)
+saveRDS(bw_all_samples, paste0("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/", "bw_all_samples.rds"))
+saveRDS(bw_merges, paste0("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/", "bw_merges.rds"))
+
+# PURA binding sites
+saveRDS(binding_sites, paste0("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/", "binding_sites.rds"))
+
+# filtered annotation
+
+saveRDS(annotation, paste0("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/", "annotation.rds"))
+
+```

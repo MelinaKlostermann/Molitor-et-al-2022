@@ -1,0 +1,661 @@
+---
+title: "3 Characterisation of PURA binding"
+author: "Melina"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  BiocStyle::html_document:
+    toc_float: TRUE
+    code_folding: hide
+    toc: TRUE
+vignette: >
+  %\VignetteIndexEntry{AS USP39 KD}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+require("knitr")
+knitr::opts_chunk$set(warning=FALSE, message=FALSE, cache=TRUE) #, fig.pos = "!H", out.extra = ""
+```
+
+# What is done here?
+
+- Types of bound genes
+- Distribution of binding sites over gene regions (with and without normalisation for region length)
+- Distribution of crosslink event over gene regions, metagene profile 
+- Distribution of binding sites per gene and in relation to TPM
+- Relative maps of crosslink distribution
+- GeneOntology and REACTOME enrichment analysis
+
+
+
+```{r libraries, include=FALSE}
+library(GenomicRanges)
+library(rtracklayer)
+library(knitr)
+library(GenomicFeatures)
+library(dplyr)
+library(ggpubr)
+library(purrr)
+library(wesanderson)
+library(cliProfiler)
+library(hypeR)
+
+
+report_color <- (pals::ocean.solar(15))
+
+outpath <- "/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/01-BS_def/02-BS_def_endo/Report59-output/"
+source("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/XX-helpful-chunks/theme_paper.R")
+
+``` 
+
+
+# Input
+
+```{r input}
+
+
+# Clip data
+binding_sites <-  readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/binding_sites.rds")  
+CL_list <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/bw_merges.rds")
+#w_path_list <- readRDS(paste0("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/02-Comp-iCLIPs/XX-Combined_experiments/bw_path_list_PURA_all_iCLIPs.rds"))
+
+
+# RNAseq
+rnaseq_counts <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/rnaseq_counts.rds")
+
+
+# annotations
+gff3 <- "/Users/melinaklostermann/Documents/projects/anno/GENCODEv31-p12/gencode.v31.annotation.gff3" # for cliProfiler
+annotation <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/annotation.rds")
+
+anno_txdb <- makeTxDbFromGRanges(annotation)
+
+```
+
+
+# Bound Gene types
+
+```{r}
+# anntotion of only genes, overlaps are resolved by keeping the longer gene
+annotation_genes <- annotation[annotation$type=="gene"] 
+annotation_genes <- sort(annotation_genes, by = ~ width + seqnames + start)
+
+#overlaps of crosslinks with genes
+ol <- findOverlaps(annotation_genes, binding_sites)
+bs <- binding_sites
+bs$idx <- 1:NROW(bs)
+
+# get all possible regions overlapping with clrosslinked nucleotide
+bs_2 <- bs[subjectHits(ol)]
+bs_2$gene_id <- annotation_genes[queryHits(ol)]$gene_id
+
+# choose type highest in hiearcy
+bs_3 <- as.data.frame(bs_2) %>%
+  group_by(idx) %>%
+  dplyr::slice(1)
+
+
+binding_sites_on_genes <- bs_3  
+
+# there are binding sites outside of annotated genes which are discarded here:
+NROW(binding_sites)
+NROW(binding_sites_on_genes)
+
+
+bound_genes <- annotation_genes[substr(annotation_genes$gene_id,1,15) %in% substr(binding_sites_on_genes$gene_id,1,15)]  %>% # get bound genes
+ # remove overlapping gene annotation
+  as.data.frame(.)  %>%
+  filter( !duplicated(gene_id) ) %>%
+  filter( gene_type != "TEC" & !grepl(pattern = "pseudo", gene_type)  )# remove uninteresting types
+
+
+ggplot(bound_genes, aes(x = gene_type))+
+  geom_bar(fill = "blue")+
+  stat_count(aes(label=paste0(sprintf("%1.11f", ..count../sum(..count..)*100),
+                              "% \n", ..count..), y=0.5*max(..count..)), 
+             geom="text", colour="black", size=4, position=position_dodge(width=1)) +
+  coord_flip()+
+  theme_paper()
+
+
+```
+
+
+
+# Bound gene regions of protein coding genes
+
+```{r}
+# classify only protein coding genes, regions only from bound genes
+anno_regions <- annotation[annotation$type %in% c("three_prime_UTR", "five_prime_UTR", "CDS") ]
+anno_regions <- anno_regions[anno_regions$gene_id %in% binding_sites_on_genes$gene_id]
+anno_regions <- anno_regions[anno_regions$gene_type == "protein_coding"]
+
+annotation_bound <- annotation[annotation$gene_id %in% binding_sites_on_genes$gene_id]
+annotation_bound_txdb <- makeTxDbFromGRanges(annotation_bound)
+
+#get introns
+introns_bound_genes <- intronsByTranscript(annotation_bound_txdb) %>% unlist(.)
+introns_bound_genes$type = "intron"
+anno_regions <- c(anno_regions, introns_bound_genes)
+
+#overlaps of binding sites with genes
+binding_sites_on_genes <- makeGRangesFromDataFrame(binding_sites_on_genes, keep.extra.columns = T)
+ol_bs <- findOverlaps(anno_regions, binding_sites_on_genes, ignore.strand = FALSE, type ="any")
+bs <- binding_sites_on_genes
+bs$idx <- 1:NROW(binding_sites_on_genes)
+
+# get all possible regions overlapping with clrosslinked nucleotide
+bs_2 <- bs[subjectHits(ol_bs)]
+elementMetadata(bs_2) <- c(elementMetadata(bs[subjectHits(ol_bs)]), elementMetadata(anno_regions[queryHits(ol_bs)]))
+
+# choose type highest in hiearcy
+bs_3 <- as.data.frame(bs_2) %>%
+  group_by(idx) %>%
+  arrange(factor(type, levels = c("three_prime_UTR", "five_prime_UTR", "CDS", "intron")), .by_group = T) %>%
+  dplyr::slice(1)
+
+
+ggplot(bs_3, aes(x=type))+
+  geom_bar()+
+  stat_count(aes(label=paste0(sprintf("%1.1f", ..count../sum(..count..)*100),
+                              "% \n", ..count..), y=0.5*..count..), 
+             geom="text", colour="white", size=4, position=position_dodge(width=1)) +
+  theme_paper()+
+  ylab("Number of crosslink events")
+
+
+bs3 <- makeGRangesFromDataFrame(bs_3, keep.extra.columns = T)
+bs_without_region <- binding_sites_on_genes[-queryHits(findOverlaps(binding_sites_on_genes, bs3))]
+bs_without_region$type <- "no_region"
+
+binding_sites_with_regions <- c(makeGRangesFromDataFrame(bs_3, keep.extra.columns = T) , bs_without_region)
+
+```
+
+
+```{r eval=FALSE, include=FALSE}
+
+# make a GRanges with all regions overlaping BS
+idx_BS_regions <- findOverlaps(binding_sites, anno_regions, ignore.strand = FALSE)
+BS_with_all_regions <- binding_sites[queryHits(idx_BS_regions)]
+elementMetadata(BS_with_all_regions) <- c(elementMetadata(BS_with_all_regions),
+                                          elementMetadata(anno_regions[subjectHits(idx_BS_regions)]))
+
+table(BS_with_all_regions$gene_type)
+
+# hierarchy: 3'UTR > 5'UTR > CDS > intron 
+# start and stop codon left out -> part of UTRs
+
+# initialise column of peak region
+BS_with_all_regions$BS_region <- NA
+
+#########
+# 3'UTR
+#########
+# get BS overlapping with 3'UTRs 
+BS_3utr <- BS_with_all_regions[BS_with_all_regions$type == "three_prime_UTR"] %>% unique 
+BS_3utr$BS_region <- "3UTR"
+BS_assigned_regions <- BS_3utr
+
+
+##########
+# 5'UTR
+#########
+# get CDS BS that are not overlaping to UTRs
+BS_5utr <- BS_with_all_regions[-queryHits(findOverlaps(
+  BS_with_all_regions, BS_assigned_regions))] %>% .[.$type=="five_prime_UTR"]%>% unique
+BS_5utr$BS_region <- "5UTR"
+# add assigned CDS BS to assigned regions
+BS_assigned_regions <- c(BS_assigned_regions, BS_5utr)
+
+##########
+# CDS
+########
+# get CDS BS that are not overlaping to UTRs
+BS_cds <- BS_with_all_regions[-queryHits(findOverlaps(
+  BS_with_all_regions, BS_assigned_regions))] %>% .[.$type=="CDS"]%>% unique
+BS_cds$BS_region <- "CDS"
+# add assigned CDS BS to assigned regions
+BS_assigned_regions <- c(BS_assigned_regions, BS_cds)
+
+
+NROW(BS_3utr)
+NROW(BS_5utr)
+NROW(BS_cds)
+
+```
+
+```{r eval=FALSE, include=FALSE}
+
+# make a df with needed info from UTRs
+utr_df <- as.data.frame(annotation[grepl(pattern = "UTR", annotation$type)])
+#get cds and match start of cds to utr df
+cds4UTR <- annotation[annotation$type=="CDS"]%>% as.data.frame
+idx_UTR_cds <- match(utr_df$transcript_id, cds4UTR$transcript_id)
+utr_df <- cbind(utr_df, start_CDS=cds4UTR[idx_UTR_cds,]$start)
+
+# UTR is 3' if the start of the CDS is downstream of the start of the UTR, else is 5'
+utr_df <- utr_df %>% 
+  mutate(type_assigned=ifelse((.$strand == '+'& .$start > .$start_CDS)|
+                       (.$strand=='-' & .$start <.$start_CDS), "3UTR", "5UTR"))
+utr_35 <- utr_df %>% makeGRangesFromDataFrame(keep.extra.columns = TRUE)
+
+table(utr_35$type_assigned)
+
+table(anno_regions$type)
+
+NROW(annotation[grepl(pattern = "UTR", annotation$type)])
+
+```
+
+```{r eval=FALSE, include=FALSE}
+gff3 <- import.gff3("/Users/melinaklostermann/Documents/projects/anno/GENCODEv31-p12/gencode.v31.annotation.gff3") 
+gtf <- import("/Users/melinaklostermann/Documents/projects/anno/GENCODEv31-p12/gencode.v31.annotation.gtf")
+
+NROW(gff3[gff3$type=="three_prime_UTR"]) + NROW(gff3[gff3$type=="five_prime_UTR"])
+
+NROW(gtf[gtf$type=="UTR"])
+
+
+gff3[gff3$type %in% c("three_prime_UTR", "five_prime_UTR", "stop_codon")]
+gtf[gtf$type=="UTR"]
+
+gff3_txdb <- makeTxDbFromGRanges(gff3) 
+gtf_txdb <- makeTxDbFromGRanges(gtf)
+
+threeUTRsByTranscript(gff3_txdb) %>% NROW(.)
+threeUTRsByTranscript(gtf_txdb) %>% NROW(.)
+
+
+gff3_without_NA <- gff3[!is.na(gff3$transcript_support_level)]
+gtf_without_NA <- gtf[!is.na(gtf$transcript_support_level)]
+
+gff3_txdb <- makeTxDbFromGRanges(gff3_without_NA) 
+gtf_txdb <- makeTxDbFromGRanges(gtf_without_NA)
+
+threeUTRsByTranscript(gff3_txdb) %>% NROW(.)
+threeUTRsByTranscript(gtf_txdb) %>% NROW(.)
+
+```
+
+## Normlisation for region length
+
+```{r}
+# classify only protein coding genes
+anno_for_norm <- annotation[annotation$gene_type == "protein_coding"]
+#anno_for_norm <- anno_for_norm[anno_for_norm$gene_id %in% binding_sites_on_genes$gene_id]
+annotation_pc_txdb <-  makeTxDbFromGRanges(anno_for_norm)
+
+anno_for_norm <- anno_for_norm[anno_for_norm$type %in% c("three_prime_UTR", "five_prime_UTR", "CDS") ]
+
+#get introns
+introns_for_norm <- intronsByTranscript(annotation_pc_txdb) %>% unlist(.)
+introns_for_norm$type = "intron"
+anno_for_norm <- c(anno_for_norm, introns_for_norm)
+anno_for_norm_r <- GenomicRanges::reduce(anno_for_norm)
+
+utr3 <- anno_for_norm[anno_for_norm$type=="three_prime_UTR"]
+anno_left <- GenomicRanges::setdiff(anno_for_norm_r, utr3, ignore.strand=FALSE)
+
+utr5 <- GenomicRanges::intersect(anno_left, anno_for_norm[anno_for_norm$type=="five_prime_UTR"] )
+anno_left <- GenomicRanges::setdiff(anno_left, utr5, ignore.strand=FALSE)
+
+cds <- GenomicRanges::intersect(anno_left, anno_for_norm[anno_for_norm$type=="CDS"] )
+anno_left <- GenomicRanges::setdiff(anno_left, cds, ignore.strand=FALSE)
+
+intron <- GenomicRanges::intersect(anno_left, anno_for_norm[anno_for_norm$type=="intron"] )
+anno_left <- GenomicRanges::setdiff(anno_left, intron, ignore.strand=FALSE)
+
+
+norm_df <- data.frame(region = c("three_prime_UTR", "five_prime_UTR", "CDS", "intron"),
+                      width = c(sum(width(utr3)), sum(width(utr5)), sum(width(cds)), sum(width(intron))))
+  
+
+norm_regions <- bs_3 %>% group_by(type) %>% summarize(nts_in_BS = sum(width)) %>% 
+  left_join(norm_df, by = c(type = "region")) %>%
+  mutate(norm_binding_per_reg_size = nts_in_BS / width)
+
+
+
+ggplot(norm_regions, aes(x=type, y = norm_binding_per_reg_size))+
+  geom_col()+
+  theme_paper()
+
+```
+
+# Strongest binding site per gene
+```{r}
+strongest_BS <- bs_3 %>% group_by(gene_id) %>%
+  arrange(desc(score)) %>%
+  dplyr::slice(1) %>%
+  ungroup() %>%
+  group_by(type)%>%
+  summarize(nts_in_BS = sum(width)) %>% 
+  left_join(norm_df, by = c(type = "region")) %>%
+  mutate(norm_binding_per_reg_size = nts_in_BS / width)
+
+
+
+ggplot(strongest_BS, aes(x=type, y = norm_binding_per_reg_size))+
+  geom_col()+
+  theme_paper()
+
+```
+
+
+# Distribution of crosslinks on gene regions
+
+```{r eval=FALSE, include=FALSE}
+
+anno_regions_all <- annotation[annotation$type %in% c("three_prime_UTR", "five_prime_UTR", "CDS") ]
+#anno_regions_all <- anno_regions_all[anno_regions_all$gene_id %in% binding_sites_on_genes$gene_id]
+anno_regions_all <- anno_regions_all[anno_regions_all$gene_type == "protein_coding"]
+
+annotation_txdb <- makeTxDbFromGRanges(annotation_bound)
+
+#get introns
+introns_bound_genes <- intronsByTranscript(annotation_txdb) %>% unlist(.)
+introns_bound_genes$type = "intron"
+anno_regions_all <- c(anno_regions_all, introns_bound_genes)
+
+#overlaps of binding sites with genes
+cl <- c(CL_list[[1]], CL_list[[2]])
+ol_cl <- findOverlaps(anno_regions_all, cl, ignore.strand = FALSE, type ="any")
+cl$idx <- 1:NROW(cl)
+
+# get all possible regions overlapping with clrosslinked nucleotide
+cl_2 <- cl[subjectHits(ol_cl)]
+elementMetadata(cl_2) <- c(elementMetadata(cl[subjectHits(ol_cl)]), elementMetadata(anno_regions_all[queryHits(ol_cl)]))
+
+# choose type highest in hiearcy
+cl_3 <- as.data.frame(cl_2) %>%
+  group_by(idx) %>%
+  arrange(factor(type, levels = c("three_prime_UTR", "five_prime_UTR", "CDS", "intron")), .by_group = T) %>%
+  dplyr::slice(1)
+
+
+ggplot(cl_3, aes(x=type))+
+  geom_bar()+
+  stat_count(aes(label=paste0(sprintf("%1.1f", ..count../sum(..count..)*100),
+                              "% \n", ..count..), y=0.5*..count..), 
+             geom="text", colour="white", size=4, position=position_dodge(width=1)) +
+  theme_paper()+
+  ylab("Number of crosslink events")
+
+#ggsave(paste0(outpath, "crosslink_gene_regions.pdf"), width = 5 , height  = 5, units = "cm")
+
+```
+
+
+# Meta gene profile
+
+```{r eval=FALSE, include=FALSE}
+# split for crosslinks on genes with highestbbinding in cds vs utr
+BS_cds_utr <- binding_sites_with_regions[binding_sites_with_regions$type %in% c("CDS", "three_prime_UTR")]
+highest_BS_per_gene <- BS_cds_utr %>%
+  as.data.frame(.) %>%
+  group_by(gene_id) %>%
+  arrange(desc(score), .by_group = T) %>%
+  dplyr::slice(1) %>%
+  ungroup() %>%
+  mutate(gene_id = substr(gene_id,1,15))
+
+# selct only crosslinks on annotated genes
+idx_cl_gene_id <- findOverlaps(cl, annotation[annotation$type == "gene"])
+idx_cl_gene_id <- as.data.frame(idx_cl_gene_id) %>%  filter(!duplicated(queryHits))
+
+cl$gene_id <- NA
+anno_gene <- annotation[annotation$type == "gene"]
+cl[idx_cl_gene_id$queryHits]$gene_id <- substr(anno_gene[idx_cl_gene_id$subjectHits]$gene_id,1,15)
+
+cl_on_genes <- cl[!is.na(cl$gene_id)] %>%
+  as.data.frame(.) %>%
+  left_join(highest_BS_per_gene[,c("gene_id", "type")], by = "gene_id") %>% 
+  filter(!is.na(type))%>%
+  mutate(group = type) %>%
+  makeGRangesFromDataFrame(keep.extra.columns = T)
+
+# make metaprofile 
+
+profile <- metaGeneProfile(cl_on_genes, annotation = gff3, group="type")
+profile$Plot + ylim(c(0,0.9)) + theme_paper() + theme(legend.position = NULL)
+
+#ggsave(paste0(outpath,"MetaGeneProfile_cds_utr.pdf" ), width = 9, height = 5, units = "cm")
+
+```
+
+# Binding vs tpm
+
+```{r}
+#
+s <- list(0,1,10,100,1000)
+
+RNA_tpm_cutoffs <- map(s, ~rnaseq_counts %>% filter(mean_tpm_rnaseq > .x))
+
+RNA_tpm_cutoffs_bound <- map2_dfr(RNA_tpm_cutoffs, s, ~c(bound = nrow(.x[.x$gene_id %in% substr(binding_sites_with_regions$gene_id,1,15),]),
+                                                  all_over_tpm_cut =   nrow(.x),
+                                                  tpm_cut = .y))
+
+
+RNA_tpm_cutoffs_bound <- mutate(RNA_tpm_cutoffs_bound, ratio_bound = bound / all_over_tpm_cut)
+
+ggplot(RNA_tpm_cutoffs_bound, aes(x = as.factor(tpm_cut), y = ratio_bound, label = all_over_tpm_cut))+
+  geom_col(position = "identity")+
+  geom_text(aes(label=paste(round(ratio_bound,2), "% \n of", all_over_tpm_cut)), 
+             geom="text", color= "black", size=4)+
+  #ggrepel::geom_text_repel()+
+  ylim(0,1)+
+  theme_paper()
+
+
+
+```
+
+## RNAseq TPM vs CLIP TPM
+
+```{r}
+#########################
+# Calcualte CLIP tpms
+#########################
+
+# get transcript lengths
+transcript_length <- transcriptLengths(anno_txdb, with.cds_len = T)
+transcript_length_mean <- transcript_length %>%
+  dplyr::group_by(gene_id) %>%
+  summarise(transcript_length = mean(tx_len), .groups = "keep")
+transcript_length_mean$gene_id <- substr(transcript_length_mean$gene_id,1,15)
+binding_sites_with_regions$gene_id <- substr(binding_sites_with_regions$gene_id,1,15)
+
+# add mean transcript length to binding sites
+binding_sites_with_regions <- binding_sites_with_regions %>% as.data.frame() %>%
+  left_join(., transcript_length_mean, by = "gene_id", ) 
+
+# add gene length for genes with no annotated transcript
+binding_sites_with_regions[is.na(binding_sites_with_regions$transcript_length),]$binding_sites_with_regions <-  binding_sites_with_regions[is.na(binding_sites_with_regions$transcript_length),]$width
+
+# tpm for all samples
+binding_sites_with_regions <- binding_sites_with_regions %>% mutate(
+    s1.clip.tpm = clp_rep1 / transcript_length,
+    s2.clip.tpm = clp_rep2 / transcript_length,
+    s3.clip.tpm = clp_rep3 / transcript_length,
+    s4.clip.tpm = clp_rep4 / transcript_length
+ )
+
+
+# scaling factor values for samples 
+scaling_factor <- binding_sites_with_regions[,c("s1.clip.tpm", "s2.clip.tpm", "s3.clip.tpm", "s4.clip.tpm")] 
+scaling_factor <- colSums(scaling_factor, na.rm = T)
+scaling_factor <- scaling_factor/1000000
+
+binding_sites_with_regions <- binding_sites_with_regions %>% mutate(
+    s1.clip.tpm = s1.clip.tpm / scaling_factor["s1.clip.tpm"],
+    s2.clip.tpm = s2.clip.tpm / scaling_factor["s2.clip.tpm"],
+    s3.clip.tpm = s3.clip.tpm / scaling_factor["s3.clip.tpm"],
+    s4.clip.tpm = s4.clip.tpm  / scaling_factor["s4.clip.tpm"]) %>%
+  rowwise() %>%
+  mutate( mean.clip.tpm = mean(c(s1.clip.tpm, s2.clip.tpm, s3.clip.tpm, s4.clip.tpm))
+    )
+
+
+#############################
+# add RNAseq TPM and compare
+############################
+binding_sites_with_regions <- binding_sites_with_regions %>% left_join(., rnaseq_counts, by = c(gene_id= "gene_id"))
+
+ggplot(binding_sites_with_regions, aes(x = log10(mean_tpm_rnaseq), log10(mean.clip.tpm)))+
+                ggrastr::rasterise(geom_point(size = 0.2), dpi = 300)+
+  ggrastr::rasterise(ggpointdensity::geom_pointdensity(size = 0.2), dpi = 300)+
+  geom_smooth(method = "lm", color = "black")+
+  stat_cor()+
+  theme_paper()
+  
+#ggsave(filename = paste0(output_path, "/tpm_comp.pdf"), width = 7, height = 5, units = "cm")
+
+
+```
+
+
+# Number of binding sites per gene
+
+```{r}
+binding_sites_with_regions <- makeGRangesFromDataFrame(binding_sites_with_regions, keep.extra.columns = T)
+bound_genes <- makeGRangesFromDataFrame(bound_genes, keep.extra.columns = T)
+
+n_BS_per_gene <- data.frame( n_BS = as.numeric(countOverlaps(bound_genes, binding_sites_with_regions)),
+                             gene_id = substr(bound_genes$gene_id,1,15)) %>%
+  mutate(., n_BS_plot = case_when (n_BS > 100 ~ 100,
+                                   T ~ n_BS))
+
+
+ggplot(n_BS_per_gene, aes(x=n_BS_plot))+
+  geom_histogram(binwidth = 1)+
+  theme_paper()+
+  geom_vline(xintercept = mean(n_BS_per_gene$n_BS), color =  "blue")+
+  geom_vline(xintercept = median(n_BS_per_gene$n_BS), color =  "green")+
+  geom_vline(xintercept = quantile(n_BS_per_gene$n_BS)[2], color = "green")+
+   geom_vline(xintercept = quantile(n_BS_per_gene$n_BS)[4], color =  "green")+
+  xlab("Number of binding sites per gene")+
+  ylab("Number of genes")
+
+
+```
+
+
+
+# Number of binding sites
+From revision:
+ - the distribution of the number of sites per gene over the whole transcriptome should be shown. Is it a continuum from no binding sites to many, or is there a subset of genes intensively bound
+```{r}
+###################
+# Number of BS per gene
+##################
+
+n_BS_per_gene_tpm <- left_join(n_BS_per_gene, rnaseq_counts, by = "gene_id" )
+
+
+ggplot(n_BS_per_gene_tpm, aes(x=mean_tpm_rnaseq, y = n_BS))+
+  geom_point()+
+  #ggforce::facet_zoom(xlim=c(0,1500))+
+  #geom_hline(yintercept = 25, color ="red")+
+  geom_smooth()+
+  ylab("Number of binding sites per gene")+
+  xlab("Gene expression [tpm]")+
+  theme_paper()
+
+
+
+n_BS_per_gene_tpm <- n_BS_per_gene_tpm %>% mutate(bin = cut(mean_tpm_rnaseq, breaks = c(-Inf,1,10,100,200,300,400,500,600,25000 )) )
+
+median_per_bin <- n_BS_per_gene_tpm %>% group_by(bin) %>%
+  summarise(median = median(n_BS))
+
+ggplot(n_BS_per_gene_tpm, aes(x=as.factor(bin), y = n_BS))+
+  # gghalves::geom_half_boxplot(outlier.size = -5, lwd = 0.5) +
+  ggrastr::rasterize(geom_jitter(), dpi = 400)+
+  geom_point(data = median_per_bin, aes(x = bin, y = median ), color = "red")+
+  theme_paper()+
+  ylab("Number of binding sites per gene")+
+  xlab("Binned gene expression [tpm]")+
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+
+#ggsave(paste0(outpath,"tpm_vs_BS_per_gene.pdf"), height = 6, width = 7, units = "cm")
+
+```
+
+
+# GO
+
+```{r}
+# background: all genes with crosslinks
+expr_genes <- subsetByOverlaps(annotation_genes, c(CL_list[[1]],CL_list[[2]]))
+
+# msigdb_available(species = "Homo sapiens")
+reactome_geneset <- msigdb_gsets("Homo sapiens", "C2", "CP:REACTOME")
+cell_comp_geneset <- msigdb_gsets("Homo sapiens", "C5", "CC")
+
+
+# background
+bg <- unique(expr_genes$gene_name)
+
+# Test USS groups vs gene sets
+hyps_reactome <-  hypeR(bound_genes$gene_name, reactome_geneset, test="hypergeometric", fdr=1, pval = 1, background = bg )
+hyps_cell_comp <- hypeR(bound_genes$gene_name, cell_comp_geneset, test="hypergeometric", fdr=1, pval = 1, background = bg) 
+
+
+
+# plot reactome
+reactome_df <- hyps_reactome$data %>% mutate(label = tolower(label), generatio = overlap / geneset)
+
+ggplot(reactome_df[1:25,], aes(y = generatio, x = factor(label, level = rev(unique(label)))))+
+  geom_col()+
+  coord_flip()+
+  theme_paper()+
+  scale_size(range = c(1, 3))
+
+# xlsx::write.xlsx(reactome_df, paste0(outpath, "iCLIP_reactome_list.xlsx"))
+# ggsave(paste0(outpath, Sys.Date(), "reactome_iCLIP_paper.pdf"), width = 17, height = 8, units = "cm")
+
+
+# plot cellular components 
+cc_df <- hyps_cell_comp$data %>% mutate(label = tolower(label), generatio = overlap / geneset)
+
+ggplot(cc_df[1:25,], aes(y = generatio, x = factor(label, level = rev(unique(label)))))+
+  geom_col()+
+  coord_flip()+
+  theme_paper()+
+  scale_size(range = c(1, 3))
+
+#xlsx::write.xlsx(cc_df, paste0(outpath, "iCLIP_GO_cc_list.xlsx"))
+#ggsave(paste0(outpath, Sys.Date(), "cc_iCLIP_paper.pdf"), width = 17, height = 8, units = "cm")
+
+
+# cellular components connected to neurons
+dendritic_cc <- cc_df[grepl(cc_df$label, pattern="dendritic"),]
+neuron_cc <- cc_df[grepl(cc_df$label, pattern="neuron"),]
+axon_cc <- cc_df[grepl(cc_df$label, pattern="axon"),]
+
+neuro_dendritic_cc <- rbind(dendritic_cc, neuron_cc, axon_cc)
+
+ggplot(neuro_dendritic_cc[neuro_dendritic_cc$fdr < 0.05,], aes(y = generatio, x = factor(label, level = rev(unique(label))), fill = -log10(fdr) ))+
+  geom_col()+
+  coord_flip()+
+  theme_paper()+
+  scale_size(range = c(1, 3))
+
+#ggsave(paste0(outpath, Sys.Date(), "cc_dndritic_iCLIP_paper.pdf"), width = 17, height = 8, units = "cm")
+
+
+```
+
+
+# Output
+- binding sites with additional infos (binding_sites_characterized.rds)
+
+```{r eval=FALSE, include=FALSE}
+
+saveRDS(binding_sites_with_regions,  "/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/binding_sites_characterized.rds")
+
+```
+
+
