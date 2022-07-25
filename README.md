@@ -16,10 +16,12 @@ We analysed PURA's in vivo binding behaviour to RNAs in iCLIP experiments. These
 * Output: binding sites with additional infos (binding_sites_characterized.rds)
 
 ## 4 Comparison of the crosslink patterns in three different PURA iCLIP experiments from HeLa cells and NPC PURA iCLIP 
+* Input: binding sites (binding_sites.rds), filtered annotation (annotation.rds), crosslink bws of all 4 iCLIP experiments
 
 ## 5 Predict RNA accessibility and 5-mer frequencies considering mature transcript sequences (HeLa, endogenous PURA)
 
 ## 6 Comparison of binding to RNAseq changes
+* Input: deseq anaysis (deseq.rds), binding sites with additional infos (binding_sites_characterized.rds)
 
 ## 7 Shotgun proteomics
 
