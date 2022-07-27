@@ -5,7 +5,6 @@ date: "`r format(Sys.time(), '%d %B, %Y')`"
 output:
   BiocStyle::html_document:
     toc_float: TRUE
-    code_folding: hide
     toc: TRUE
 vignette: >
   %\VignetteIndexEntry{AS USP39 KD}
@@ -65,11 +64,12 @@ First DeSEq is run on the RNAseq count files to calculate foldchanges between al
 htseq_matrix <- data.table::fread(htSeq_dir) %>% as.data.frame()
 rownames(htseq_matrix) <- htseq_matrix$`This is task 1`
 htseq_matrix$`This is task 1` <- NULL
-colnames(htseq_matrix) <- c("kd1", "kd2", "kd3", "kd4", "oe1", "oe2", "oe3", "oe4", "wt1", "wt2", "wt3", "wt4")
+htseq_matrix <- htseq_matrix[, c(1:4, 9:12)]
+colnames(htseq_matrix) <- c("kd1", "kd2", "kd3", "kd4",  "wt1", "wt2", "wt3", "wt4")
 
 
-condition_all <- c(rep("kd",4), rep("oe",4), rep("wt",4))
-sampleReplicate <- rep(paste("Rep",1:4, sep = "_"),3)
+condition_all <- c(rep("kd",4), rep("wt",4))
+sampleReplicate <- rep(paste("Rep",1:4, sep = "_"),2)
 sampleTable_all <- data.frame(sampleName = colnames(htseq_matrix),
                           fileName = colnames(htseq_matrix),
                           condition = condition_all,
@@ -79,6 +79,9 @@ dds_DataSet <- DESeqDataSetFromMatrix(countData = htseq_matrix, colData = sample
 
 dds_analysis <- DESeq(dds_DataSet, betaPrior =T) 
 rownames(dds_analysis) <- substr(rownames(dds_analysis),1,15)
+
+dds_analysis_rlog <- rlog(dds_analysis) %>% assay(.) 
+saveRDS(dds_analysis_rlog, "/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/rlog_counts.rds")
 
 res_RNAseq_kd <- results(dds_analysis, contrast = c("condition", "kd", "wt"))%>% as.data.frame()
 res_RNAseq_kd$gene_id <- rownames(res_RNAseq_kd)

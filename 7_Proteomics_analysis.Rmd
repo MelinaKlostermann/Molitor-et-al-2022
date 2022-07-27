@@ -1,0 +1,658 @@
+---
+title: "7 Protein expression changes in PURA knockdown from shotgun proteomics"
+author: "Melina"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  BiocStyle::html_document:
+    toc_float: TRUE
+    toc: TRUE
+vignette: >
+  %\VignetteIndexEntry{AS USP39 KD}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+require("knitr")
+knitr::opts_chunk$set(warning=FALSE, message=FALSE, cache=TRUE) #, fig.pos = "!H", out.extra = ""
+```
+
+```{r libraries, include=FALSE, eval =TRUE}
+library(knitr)
+library(GenomicRanges)
+library(tidyverse)
+library(ComplexHeatmap)
+library(hypeR)
+library(DEqMS)
+library(matrixStats)
+library(ggrastr)
+library(ggpubr)
+library(DESeq2)
+
+
+source("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/XX-helpful-chunks/theme_paper.R")
+
+```
+
+# What is done?
+
+- DEqMS analysis of shotgun proteomics data (preprocessed with maxquant)
+- DEqMS is based on limma but adjusts p-values for the number of unique peptides found for a protein
+- vulcano plot of protein changes and count plot of PURA levels
+- Enrichment analysis of GeneOntology terms and REACTOME pathways is performed for significantly changing proteins
+- Changes on protein level are compared to canges on RNA level (scatter plot, venn diagram, heatmap)
+- Changes on protein level are compared to PURA binding (vulcanos coloed by bound regions , boxplots of protein changes)
+- all three data sets are overlaped
+
+# Input
+
+```{r}
+# maxquant idnetification of proteins
+maxquant_table <- readxl::read_excel("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/04-BioID-SILAC/03-Proteomics/XX_reprocessed_data/MOL13920_wo-repl3_MQ1670_withMBR_proteinGroups_LFQ1_matching.xlsx")
+
+# binding sites
+BS <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/binding_sites_characterized.rds")
+
+# deseq analysis from PURA knockdown
+res_RNAseq <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/deseq.rds")
+rnaseq_counts_rlog <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/rlog_counts.rds")
+
+
+```
+
+# Clean up data from maxquant
+## How are proteins matched to genes?
+```{r}
+maxquant_table <- maxquant_table %>% dplyr::rename(., gene_name = `Gene symbol`)
+
+# Found proteins, that are not matched to any gene:
+sum(is.na(maxquant_table$gene_name))
+
+# Genes, that are matched to multiple proteins:
+sum(duplicated(maxquant_table$gene_name))
+
+# Removing both duplicated genes and unknown genes
+maxquant_table <- maxquant_table[!is.na(maxquant_table$gene_name),]
+maxquant_table <- maxquant_table[!duplicated(maxquant_table$gene_name),]
+```
+
+## Excluding to high fallout rates
+
+--> We exclude proteins with 2 or 3 missing values in either of the conditions
+
+```{r}
+LFQs <- maxquant_table[,c(grepl(pattern = "LFQ", colnames(maxquant_table))|
+                                                         grepl(pattern = "gene_name", colnames(maxquant_table)))] %>%
+               as.data.frame()    
+colnames(LFQs) <- c("gene_name", "kd1", "kd2", "kd3", "kd4", "wt1", "wt2", "wt3", "wt4")
+
+
+# sum fall outs
+LFQs[LFQs==0] = NA
+LFQs$na_kd <- apply(LFQs,1, function(y) sum(is.na(y[2:5])))
+LFQs$na_wt <- apply(LFQs,1, function(y) sum(is.na(y[6:9])))
+
+
+LFQ_filt <- LFQs %>% dplyr::filter(., (na_wt %in% c(0,1)) & (na_kd %in% c(0,1)))
+
+LFQ_4_zeros <- LFQs %>% dplyr::filter(., (((na_wt == 4) & (na_kd %in% c(0,1)))| ((na_kd == 4)& (na_wt %in% c(0,1)))))
+
+```
+
+# Differential analysis with DEqMS
+
+## Is data median centered?
+
+Use boxplot to check if the samples have medians centered. if not, do median centering.
+
+```{r fit, echo=FALSE}
+
+protein.matrix <- LFQ_filt[,2:9]
+#map(protein.matrix, ~invisible(plotDensities(.x, legend = F)))
+
+# log transformation to linerase changes
+protein.matrix.linear <- log2(protein.matrix)
+# map(protein.matrix, ~plotDensities(.x, legend = F))
+boxplot(protein.matrix.linear)
+
+
+```
+--> medians are centered, no adjustment necessary
+
+
+```{r}
+###################
+# function DEqMS
+###################
+
+f_DEqMS <- function(protein_matrix, pep_count_table){
+
+# model
+##################
+condition = as.factor(c(rep("kd",4), rep("wt",4)))
+design = model.matrix(~0+condition)
+
+contrasts <- c("conditionkd-conditionwt")
+contrast <- makeContrasts(contrasts=contrasts, levels = design)
+
+# fit model to matrix
+########################
+
+fit1 = lmFit(protein_matrix, design = design)
+fit2 = contrasts.fit(fit1, contrasts = contrast)
+fit3 <- eBayes(fit2)
+
+
+# correct bias of variance estimate
+####################################
+
+fit3$count = pep_count_table[rownames(fit3$coefficients),"count"]
+
+
+fit4 <- spectraCounteBayes(fit3)
+
+VarianceBoxplot(fit4, main = "Fit of variance estimate",
+                xlab="peptide count + 1")
+
+VarianceScatterplot(fit4, main = "Fit of variance estimate",
+                xlab="peptide count + 1")
+
+
+# adding gene info to results
+DEqMS.results = outputResult(fit4, coef_col = 1)
+
+DEqMS.results$gene_name <- rownames(DEqMS.results)
+
+return(DEqMS.results)
+}
+
+#####################
+# peptide count tables
+########################
+# Maxquant: we use minimum peptide count among six samples
+# count unique+razor peptides used for quantification
+
+pep.count.table =  data.frame(count = rowMins(as.matrix(maxquant_table[,20:27])),
+                             row.names = maxquant_table$gene_name)
+# Minimum peptide count of some proteins can be 0
+# add pseudocount 1 to all proteins
+pep.count.table = pep.count.table %>% mutate(., count = count+1)
+
+# protein matrix
+rownames(protein.matrix.linear) = LFQ_filt$gene_name
+rownames(protein.matrix) = LFQ_filt$gene_name
+
+#####################
+# run differential analysis
+#####################
+deqms <- f_DEqMS(protein_matrix = protein.matrix.linear, pep_count_table = pep.count.table)
+
+# readd proteins with 4 fall outs in one catagory (without statistics)
+LFQ_4_zeros_d <- LFQ_4_zeros[,c("gene_name", "na_wt", "na_kd")] %>%
+  rowwise(.) %>%
+  mutate(., logFC = case_when(na_wt == 4 ~ Inf,
+                           na_kd == 4 ~ -Inf,
+                           T ~ 0), 
+         AveExpr = NA,
+          t = NA, 
+          P.Value = NA,     
+          adj.P.Val = NA,   
+          B   = NA,
+          gene = NA,         
+          count = NA,
+          sca.t = NA,
+          sca.P.Value = NA,
+          sca.adj.pval = -Inf)
+
+
+proteomics_deqms <- rbind(deqms, LFQ_4_zeros_d[, c(4:14, 1)])
+
+```
+## Vulcano proteomics
+
+```{r}
+ggplot(proteomics_deqms, aes(x = logFC, y = (-log10(sca.adj.pval))))+
+   geom_point(color ="grey", shape =1)+
+   geom_point(data = proteomics_deqms[(proteomics_deqms$sca.adj.pval< 0.05) & (abs(proteomics_deqms$logFC) > log(0.5)), ],
+              aes(x= logFC, y = (-log10(sca.adj.pval))))+
+   geom_point(data = proteomics_deqms[proteomics_deqms$gene_name %in% c("CTNNA1", "SQSTM1", "LSM14A", "CUX1", "DDX6", "GAPDH", "PURA", "PURB", "STARD7", "IL6ST", "DCP1A"),],
+              aes(x= logFC, y = -log10(sca.adj.pval)), color = "orange")+
+  ggrepel::geom_label_repel( data = proteomics_deqms[proteomics_deqms$gene_name %in% c("CTNNA1", "SQSTM1", "LSM14A", "CUX1", "DDX6", "GAPDH", "PURA", "PURB", "STARD7", "IL6ST", "DCP1A"),],
+                             aes( x = logFC,  y = (-log10(sca.adj.pval)), label = gene_name), max.overlaps = 10)+
+   xlab("Protein fold change (kd/wt) [log2]")+
+   ylab("adj. p-value (protein fold change)")+
+  theme_paper()+
+   theme(legend.position = "none", aspect.ratio = 1/1)
+  xlim(c(-3,3))
+
+# ggsave(paste0(outpath, "prot_vulcano_paper.pdf"), width = 6, height = 6, units = "cm")
+
+
+
+```
+## Countplot PURA
+
+```{r}
+
+
+pura_protein_counts <- protein.matrix["PURA",] %>% as.data.frame(.) %>% rownames_to_column(.) %>% reshape2::melt()
+pura_protein_counts$variable <- factor(pura_protein_counts$variable, levels = c("wt1", "wt2", "wt3", "wt4", "kd1", "kd2", "kd3", "kd4") )
+pura_protein_counts$group <- c( rep("kd", 4), rep("wt", 4))
+
+
+ggplot(pura_protein_counts, aes(x = variable, y = value, color = group))+
+  geom_point()+
+  theme_paper()+
+  scale_color_manual(values = c("grey", "green"), breaks= c("wt", "kd"))+
+   ylim(c(5*10^6, 2.5*10^7))+
+  theme(legend.position = "None")
+
+
+
+```
+```{r}
+# set significance
+p_cut_prot <- 0.05
+p_cut_rna <- 0.01
+
+```
+
+# GO proteomics
+
+- P-value cutoff 0.05
+- ! bg is set to all proteins that were detected in at least 3 samples of one condition
+
+```{r GO}
+
+# msigdb_available(species = "Homo sapiens")
+
+reactome_geneset <- msigdb_gsets("Homo sapiens", "C2", "CP:REACTOME")
+cell_comp_geneset <- msigdb_gsets("Homo sapiens", "C5", "CC")
+
+# proteomics_limma sig
+res_sig_kd_list <- list( up = proteomics_deqms %>% filter((sca.adj.pval < p_cut_prot) & (logFC  > 0)) %>% pull(., gene_name),
+                  down = proteomics_deqms %>% filter(sca.adj.pval < p_cut_prot & logFC  < 0) %>% pull(., gene_name)
+                  )
+                  
+# background: all proteins detected by maxquant
+bg <- proteomics_deqms$gene_name
+
+# calulate enrichments
+hyps_reactome <-  purrr::map(res_sig_kd_list,  ~hypeR(.x, reactome_geneset, test="hypergeometric", fdr=0.10, background = bg ))
+hyps_cell_comp <-  purrr::map(res_sig_kd_list,  ~hypeR(.x, cell_comp_geneset, test="hypergeometric", fdr=0.10, background = bg) )
+
+
+
+
+##########################
+# customise reactome for paper
+#########################
+
+r_down = hyps_reactome[[2]]$data %>% mutate(group = "down", padj = p.adjust(pval))
+r_up = hyps_reactome[[1]]$data %>% mutate(group = "up",  padj = p.adjust(pval))
+
+
+reactome_go_cust <- rbind(r_down, r_up) %>% arrange(padj) %>% mutate(label = tolower(label), generatio = overlap/geneset)
+reactome_go_cust_print <- reactome_go_cust %>% as.data.frame()
+#xlsx::write.xlsx(reactome_go_cust_print, file =  paste0(outpath, "reactome_proteomics_table.xlsx"))
+
+reactome_go_cust <- reactome_go_cust[reactome_go_cust$label %in% reactome_go_cust[1:20,]$label, ]
+
+ggplot(reactome_go_cust, aes(y = generatio, x = factor(label, level = rev(unique(label))), fill = fdr <0.05))+
+  geom_col()+
+  coord_flip()+
+  theme_paper()+
+  scale_fill_manual(values = setNames(c('blue','darkgrey'),c(T, F)))+
+  #scale_fill_steps(low = "blue", high = "grey", n.breaks = 20)+
+  facet_wrap(~group)+
+  scale_size(range = c(1, 3))
+
+#ggsave(paste0(outpath, Sys.Date(), "reactome_proteomics_paper.pdf"), width = 17, height = 8, units = "cm")
+
+
+##########################
+# customise cellular components for paper
+#########################
+
+cc_down = hyps_cell_comp[[2]]$data %>% mutate(group = "down", padj = p.adjust(pval))
+cc_up = hyps_cell_comp[[1]]$data %>% mutate(group = "up",  padj = p.adjust(pval))
+
+cc_go_cust <- rbind(cc_down, cc_up) %>% arrange(padj) %>% mutate(label = tolower(label), generatio = overlap/geneset)
+cc_go_cust_print <- cc_go_cust %>% as.data.frame()
+#xlsx::write.xlsx(cc_go_cust_print, file =  paste0(outpath, "cc_proteomics_table.xlsx"))
+
+cc_go_cust <- cc_go_cust[cc_go_cust$label %in% cc_go_cust[1:25,]$label, ]
+
+ggplot(cc_go_cust, aes(y = generatio, x = factor(label, level = rev(unique(label))), fill = fdr <0.01))+
+  geom_col()+
+  coord_flip()+
+  theme_paper()+
+  scale_fill_manual(values = setNames(c('blue','darkgrey'),c(T, F)))+
+  #scale_fill_steps(low = "blue", high = "grey", n.breaks = 20)+
+  facet_wrap(~group)+
+  scale_size(range = c(1, 3))
+
+#ggsave(paste0(outpath, Sys.Date(), "cc_proteomics_paper.pdf"), width = 17, height = 8, units = "cm")
+
+```
+
+
+# Comparison with RNAseq
+## scatter log2fold changes against each other
+
+```{r combine_RNAseq, echo=FALSE}
+#########################
+# combination of proteomics an rnaseq data
+#########################
+# make sure Inf values ae not filtered out
+# proteomics_deqms[is.na(proteomics_deqms$sca.adj.pval), ]$sca.adj.pval <- 0
+
+
+#rename proteomics cols
+colnames(proteomics_deqms ) <- paste(colnames(proteomics_deqms ), "prot", sep = ".") 
+
+# rename rnaseq columns
+colnames(res_RNAseq) <- paste(colnames(res_RNAseq), "rnaseq", sep = ".") 
+
+# combine
+prot_vs_RNA <- proteomics_deqms %>% left_join(res_RNAseq, by = c(gene_name.prot = "hgnc_symbol.rnaseq"))
+
+# ! now the df sometimes contains the same protein data for more than one gene
+# keep the one with higher gene l2fc
+prot_vs_RNA  <- prot_vs_RNA  %>% group_by(gene_name.prot) %>% arrange(desc(log2FoldChange.rnaseq), .by_group = T) %>% dplyr::slice(1)
+
+###########################
+# scatterplot all values
+########################
+gg_df_infinite <- prot_vs_RNA [!is.finite(prot_vs_RNA$logFC.prot), ]
+gg_df_sig <- prot_vs_RNA  %>% filter(sca.adj.pval.prot < p_cut_prot & padj.rnaseq < p_cut_rna)
+
+ggplot(prot_vs_RNA[is.finite(prot_vs_RNA$logFC.prot), ], aes(x = logFC.prot, y= log2FoldChange.rnaseq))+ #, shape = ifelse(!is.finite(logFC.prot_limma), "inf", "")
+  geom_vline(xintercept = 0)+
+  geom_hline(yintercept = 0)+
+  #ggrastr::rasterise( geom_point(), dpi = 300)+
+  ggrastr::rasterise(list(ggpointdensity::geom_pointdensity(aes(x = logFC.prot, y= log2FoldChange.rnaseq)), scale_color_gradient(low = "grey", high = "#515151")), dpi = 300)+
+  geom_smooth(method = "lm", se=FALSE, color="black", formula = y ~ x, color = "red")+
+  geom_point(data = gg_df_infinite, aes(x = logFC.prot, y= log2FoldChange.rnaseq), shape =8)+
+  geom_point(data = gg_df_sig, aes(x = logFC.prot, y= log2FoldChange.rnaseq, shape = ifelse(!is.finite(logFC.prot), "inf", "")), color = "darkred")+
+  geom_smooth(data = gg_df_sig, aes(x = logFC.prot, y= log2FoldChange.rnaseq), method = "lm", se=FALSE, formula = y ~ x, color = "darkred")+
+  scale_shape_manual(values = c(16, 8)) +
+  geom_point(data = prot_vs_RNA[prot_vs_RNA$gene_name.prot %in% c("CTNNA1", "SQSTM1", "LSM14A", "CUX1", "DDX6", "GAPDH", "PURA", "PURB", "STARD7", "IL6ST", "DCP1A"),],
+              aes(x = logFC.prot, y= log2FoldChange.rnaseq), color = "orange")+
+  ggrepel::geom_label_repel( data = prot_vs_RNA[prot_vs_RNA$gene_name.prot %in% c("CTNNA1", "SQSTM1", "LSM14A", "CUX1", "DDX6", "GAPDH", "PURA", "PURB", "STARD7", "IL6ST", "DCP1A"),],
+                             aes(x = logFC.prot, y= log2FoldChange.rnaseq, label = gene_name.prot), max.overlaps = 10, min.segment.length = 10, size = 0.5)+
+  stat_cor(size=1)+
+  stat_cor(data = gg_df_sig, aes(x = logFC.prot, y= log2FoldChange.rnaseq), vjust = 3, color="darkred", size =1)+
+  geom_point(data = prot_vs_RNA [prot_vs_RNA$gene_name.prot=="PURA",], 
+             aes( x= logFC.prot, y = log2FoldChange.rnaseq),
+             color = "orange")+
+  xlab("Protein fold change (KD/CTRL) [log2]")+
+  ylab("RNA fold change (KD/CTRL) [log2]")+
+  theme_paper()+
+  xlim(c(-3, 3))+
+  ylim(c(-3, 3))+ 
+  theme(legend.position = "none", aspect.ratio = 1/1)
+
+ #ggsave(paste0(outpath, "prot_vs_rna_paper.pdf"), width = 6, height = 6, units = "cm")
+ 
+ #prot_vs_RNA %>% filter(baseMean.rnaseq >0)
+
+```
+
+
+## Venn of overlap
+```{r venn_rnaseq_proteomics}
+
+# get all gene_ids
+up_pro <- prot_vs_RNA %>% filter(., logFC.prot > 0 & sca.adj.pval.prot < p_cut_prot) %>% .$gene_id.rnaseq %>% unique() %>% na.omit()
+down_pro <- prot_vs_RNA %>% filter(., logFC.prot < 0 & sca.adj.pval.prot < p_cut_prot) %>% .$gene_id.rnaseq%>% unique() %>% na.omit()
+
+up_RNA <- res_RNAseq %>% filter(., log2FoldChange.rnaseq > 0 & padj.rnaseq < p_cut_rna ) %>% .$gene_id.rnaseq %>% unique() %>% na.omit()
+down_RNA <-  res_RNAseq %>% filter(., log2FoldChange.rnaseq < 0 & padj.rnaseq < p_cut_rna ) %>% .$gene_id.rnaseq %>% unique() %>% na.omit()
+
+# make one list of targets
+all_targets <- c(up_pro, down_pro, up_RNA, down_RNA) %>% unique() %>% na.omit()
+
+# get overlaps
+overlaps <- data.frame(up_protein = all_targets %in% up_pro,
+                       down_protein = all_targets %in% down_pro,
+                       up_RNA = all_targets %in% up_RNA,
+                       down_RNA = all_targets %in% down_RNA)
+
+# make venn
+venn <- eulerr::euler(overlaps)
+plot(venn, quantities = TRUE, shape = "ellipse")
+
+```
+
+# Overlap with RNAseq and iCLIP
+
+```{r overlap_RNAseq_CLIP}
+all_targets <- c(up_pro, down_pro, up_RNA, down_RNA, substr(BS$gene_id,1,15)) %>% unique() %>% na.omit()
+
+BS_genes <- substr(BS$gene_id,1,15) %>% unique() %>% na.omit()
+
+overlap_mat <- cbind(
+BS_targets = all_targets %in% BS_genes,
+RNAseq_targets = all_targets %in% c(up_RNA, down_RNA), 
+protein_targets = all_targets %in% c(up_pro, down_pro))
+
+fit <- eulerr::euler(overlap_mat)
+
+plot(fit,  quantities = TRUE)
+
+
+
+```
+
+## Fisher test
+Out of xx proteins whose levels changed at both mRNA and protein level in response to PURA KD, xx were independently identified as PURA-bound RNAs by iCLIP ... 
+
+==> check !
+
+```{r fisher overlap}
+
+overlaps <- fit$original.values
+
+n_bound_and_change = overlaps["BS_targets&RNAseq_targets&protein_targets"]
+n_change_rna_prot = overlaps["RNAseq_targets&protein_targets"]
+n_bound = overlaps["BS_targets"] + overlaps["BS_targets&RNAseq_targets"] + overlaps["BS_targets&protein_targets"]
+n_expressed = overlaps["RNAseq_targets"] + overlaps["protein_targets"]
+
+fisher_m <- matrix(c(n_bound_and_change, n_change_rna_prot, n_bound, n_expressed ), nrow=2)
+
+fisher.test(fisher_m)
+
+```
+
+# Compare binding to protein changes
+
+```{r}
+BS_strongest_per_gene <- as.data.frame(BS) %>% group_by(gene_id) %>%
+  arrange(desc(score), .by_group = T) %>%
+  slice(1) %>%
+  ungroup(.)
+
+BS_strongest_per_gene$gene_id <- substr(BS_strongest_per_gene$gene_id, 1,15)
+
+prot_vs_RNA_BS <- left_join(prot_vs_RNA, BS_strongest_per_gene[c("seqnames", "start", "end", "width", "strand", "gene_id", "score", "type")], by =
+                              c(gene_id.rnaseq= "gene_id")) %>% ungroup(.) %>% as.data.frame(.)
+
+prot_vs_RNA_BS_gg <- prot_vs_RNA_BS %>% mutate(., bound = case_when( !is.na(type) ~ "PURA-bound",
+                                                                  T ~ "Not bound")) 
+
+# color vulcano by regions
+ggplot(prot_vs_RNA_BS_gg, aes(y = -log10(sca.adj.pval.prot), x = logFC.prot))+
+  geom_point(data=dplyr::select(prot_vs_RNA_BS_gg, -type), aes(y = -log10(sca.adj.pval.prot), x = logFC.prot))+
+  geom_point(aes(color = type))+
+  xlim(c(-3,3))+
+  scale_color_manual(values = c("darkred", "orange", "#2AB7CA", "blue", "purple", "darkgreen"))+
+  facet_wrap(~type,scales='free') + 
+    scale_x_continuous(limits=c(-3,3)) + 
+  scale_y_continuous(limits=c(0,5))+
+    theme_paper()+
+  theme(legend.position = "None")+
+ theme(strip.text.x = element_blank())
+
+#ggsave(paste0(outpath, "vulcanos_prot_binding.pdf"), height = 8, width = 12, units = "cm")
+  
+# boxplot protein change by binding region
+ggplot(prot_vs_RNA_BS_gg, aes(x = type, y = logFC.prot, fill = type))+
+  geom_boxplot()+
+  scale_fill_manual(values = c("darkred", "orange", "#2AB7CA", "blue", "purple", "darkgreen"))+
+  geom_hline(yintercept = 0)+
+  ylim(c(-3,3))+
+  theme_paper()+
+  theme(legend.position = "None")
+
+#ggsave(paste0(outpath, "boxplot_prot_binding_region.pdf"), height = 4, width = 4, units = "cm")
+
+
+# boxplot protein change bound vs unbound
+prot_vs_RNA_BS_gg$bound = factor(prot_vs_RNA_BS_gg$bound, levels = c("PURA-bound", "Not bound"))
+
+ggplot(prot_vs_RNA_BS_gg, aes(x = bound, y = logFC.prot, fill = bound))+
+  geom_boxplot()+
+  #scale_fill_manual(values = c("darkred", "orange", "#2AB7CA", "blue", "purple", "darkgreen"))+
+  geom_hline(yintercept = 0)+
+  ylim(c(-3,3))+
+  theme_paper()+
+  theme(legend.position = "None")+
+  stat_compare_means()
+
+#ggsave(paste0(outpath, "boxplot_prot_binding.pdf"), height = 4, width = 4, units = "cm")
+
+
+
+```
+
+# Heatmap
+```{r fig.height=10, fig.width=10}
+################
+# nice heatmap for paper
+##############
+
+############### get  sets of interest
+prot_vs_RNA_BS_sig <- prot_vs_RNA_BS %>%
+  filter(sca.adj.pval.prot < p_cut_prot & padj.rnaseq < p_cut_rna) 
+
+gene_ids_list <- list(down_down = prot_vs_RNA_BS_sig %>% filter((logFC.prot < 0) & (log2FoldChange.rnaseq < 0)),
+                 up_up = prot_vs_RNA_BS_sig %>% filter((logFC.prot > 0) & (log2FoldChange.rnaseq > 0)),
+                 up_down = prot_vs_RNA_BS_sig %>% filter((logFC.prot < 0) & (log2FoldChange.rnaseq > 0)),
+                 down_up = prot_vs_RNA_BS_sig %>% filter((logFC.prot > 0) & (log2FoldChange.rnaseq < 0))
+                 ) %>% map( ~pull(.x, gene_id.rnaseq))
+
+#gene_ids_list <- gene_ids_list %>% map(., ~.x[!is.na(gene_ids)])
+# gene_ids <- lapply(gene_ids, function(x) x[x %in% rownames(rnaseq_counts_rlog)])
+
+gene_names <- map(gene_ids_list, ~prot_vs_RNA_BS[prot_vs_RNA_BS$gene_id.rnaseq %in% .x, ]$gene_name.prot)
+
+gene_ids <- c(unlist(gene_ids_list))
+gene_names <- c(unlist(gene_names))
+
+########## matrix rna counts
+rna_matrix <- rbind( rnaseq_counts_rlog[gene_ids,])
+rownames(rna_matrix) <- gene_names 
+
+############# matrix proteins
+protein_matrix <- protein.matrix[gene_names,]
+protein_matrix[protein_matrix == 0] <- NA
+
+list_heat_matix <- list(rna_matrix, protein_matrix)
+
+############### z-score
+for(i in 1:length(list_heat_matix)){
+
+means <- rowMeans(list_heat_matix[[i]], na.rm=T)
+sds <- apply(list_heat_matix[[i]], 1, function(x) sd(x, na.rm=T))
+
+list_heat_matix[[i]] <- (list_heat_matix[[i]] - means)
+list_heat_matix[[i]] <- list_heat_matix[[i]] / sds
+
+}
+
+
+# k_means clustering of both matrices together
+# both_matrix <- cbind(list_heat_matix[[1]], list_heat_matix[[2]])
+# both_matrix[is.na(both_matrix)] <- 0
+# 
+# set.seed(2)
+# cluster <- kmeans(both_matrix, 3)
+# cluster
+
+
+# get NA back for showing
+# all_sig_prot <- rbind(clip_rnaseq_proteomics[[1]][,c("n_na_ratio_wt.prot_tf", "n_na_ratio_kd.prot_tf")]
+#                       , clip_rnaseq_proteomics[[2]][,c("n_na_ratio_wt.prot_tf", "n_na_ratio_kd.prot_tf")],
+#                       clip_rnaseq_proteomics[[3]][,c("n_na_ratio_wt.prot_tf", "n_na_ratio_kd.prot_tf")])
+
+# list_heat_matix[[2]][rownames(prot_vs_RNA_BS_sig[prot_vs_RNA_BS_sig$logFC.prot == -Inf,]), 1:4] <- NA
+# list_heat_matix[[2]][rownames(prot_vs_RNA_BS_sig[prot_vs_RNA_BS_sig$logFC.prot == Inf,]), 5:8] <- NA
+
+# order matrix by clustering
+# rownames_clustered <- names(sort(cluster$cluster)) 
+# clustered_matrix_2 <- list(list_heat_matix[[1]][rownames_clustered,], list_heat_matix[[2]][rownames_clustered,])
+
+########### scores
+bs_group <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/02-Comp-iCLIPs/07-UTR-vs-CDS/Report51-output/USS_with_names.rds")
+binding_group <- data.frame(gene_name = gene_names ) %>%
+  left_join(.,bs_group[,c("gene_name", "group")], by = "gene_name") %>%
+  pull(group) 
+#binding_group[binding_group == "non_cod"] <- "intron"
+
+l2fc = data.frame(gene_name = gene_names ) %>% 
+  left_join(res_RNAseq[,c("log2FoldChange.rnaseq", "hgnc_symbol.rnaseq")], by = c(gene_name = "hgnc_symbol.rnaseq") )%>%
+  pull(log2FoldChange.rnaseq)
+
+l2fc_protein <- data.frame(gene_name = gene_names ) %>%
+  left_join(.,prot_vs_RNA_BS[, c("logFC.prot", "gene_name.prot")], by = c(gene_name = "gene_name.prot") ) %>%
+              pull(logFC.prot) 
+
+# set Inf to highest number to plot
+l2fc_protein[is.infinite(l2fc_protein) & l2fc_protein > 0 ] <- 2.5
+l2fc_protein[is.infinite(l2fc_protein) & l2fc_protein < 0 ] <- -2.5
+
+# colors
+cols <- viridis::plasma(5)
+col_main <- circlize::colorRamp2(c(-2, -1, 0, 1, 2), viridis::plasma(5) ) 
+col_main_2 <- circlize::colorRamp2(c(-2, -1, 0, 1, 2), viridis::cividis(5) ) 
+col_l2fc <- circlize::colorRamp2(c(0.5, 1.5), c( "grey","darkred"))
+col_bs <-  t( RColorBrewer::brewer.pal(n = 6, name = "Accent"))[c(1,5,6)]
+names(col_bs) <- c( "CDS", "both", "UTR" )
+col_go <- circlize::colorRamp2(c(1, 0), c( "black", "white"))
+
+
+
+# heatmap
+lab_idx <- which(gene_names %in% c("CUX1", "CTNNA1", "PURA", "PURB", "SQSTM1", "LSM14A", "IL6ST", "STARD7", "DDX6"))
+labs <- gene_names[gene_names %in% c("CUX1", "CTNNA1", "PURA", "PURB", "SQSTM1", "LSM14A", "IL6ST", "STARD7", "DDX6")]
+
+ht_rna <- Heatmap(list_heat_matix[[1]], cluster_columns = FALSE, cluster_rows = FALSE,
+                  col = col_main, raster_device = "png", raster_quality = 300,
+                  row_split = c(rep("down down", length(gene_ids_list[[1]])),
+                                rep("up up", length(gene_ids_list[[2]])),
+                                rep("x down up", length(gene_ids_list[[3]])),
+                                rep("x up down", length(gene_ids_list[[4]]))
+                                ))
+                  
+                
+                             
+ht_protein <- Heatmap(list_heat_matix[[2]], cluster_columns = FALSE, cluster_rows = FALSE,
+                      col = col_main_2, raster_device = "png", raster_quality = 300,
+                      right_annotation = rowAnnotation(binding_group = anno_simple(binding_group, col = col_bs),
+                                                   RNA_l2fc = anno_barplot(l2fc, baseline = 0),
+                                                   protein_l2fc = anno_barplot(l2fc_protein, baseline = 0),
+                                                   foo = anno_mark(at = lab_idx, labels = labs),
+                  col = list( RNA_l2FC = col_l2fc, binding_score = col_bs, protein_l2fc = col_l2fc)
+  
+                  ))
+
+ht_list <- ht_rna + ht_protein
+draw(ht_list)
+
+# pdf(paste0(outpath,"heatmap.pdf"), height = 12, width = 10)
+# draw(ht_list)
+# dev.off
+
+```
+

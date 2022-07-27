@@ -5,7 +5,6 @@ date: "`r format(Sys.time(), '%d %B, %Y')`"
 output:
   BiocStyle::html_document:
     toc_float: TRUE
-    code_folding: hide
     toc: TRUE
 vignette: >
   %\VignetteIndexEntry{AS USP39 KD}
@@ -44,7 +43,6 @@ library(hypeR)
 
 report_color <- (pals::ocean.solar(15))
 
-outpath <- "/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/01-BS_def/02-BS_def_endo/Report59-output/"
 source("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/XX-helpful-chunks/theme_paper.R")
 
 ``` 

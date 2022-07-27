@@ -5,7 +5,6 @@ date: "`r format(Sys.time(), '%d %B, %Y')`"
 output:
   BiocStyle::html_document:
     toc_float: TRUE
-    code_folding: hide
     toc: TRUE
 vignette: >
   %\VignetteIndexEntry{AS USP39 KD}
