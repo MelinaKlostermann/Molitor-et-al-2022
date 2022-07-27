@@ -46,3 +46,5 @@ We analysed PURA's in vivo binding behaviour to RNAs in iCLIP experiments. These
 
 - Busch et al. 2019 - "iCLIP data analysis: A complete pipeline from sequencing reads to RBP binding sites" https://doi.org/10.1016/j.ymeth.2019.11.008
 - Krakau, S., Richard, H. & Marsico, A. 2017 - "PureCLIP: capturing target-specific protein–RNA interaction footprints from single-nucleotide CLIP-seq data." https://doi.org/10.1186/s13059-017-1364-2
+- RNApLfold: https://www.tbi.univie.ac.at/RNA/RNAplfold.1.html
+- Zhou Y, Zarnack K (2022). cliProfiler: A package for the CLIP data visualization. R package version 1.2.0, https://github.com/Codezy99/cliProfiler. 
