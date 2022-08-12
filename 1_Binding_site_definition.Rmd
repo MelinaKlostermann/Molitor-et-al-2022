@@ -16,7 +16,6 @@ vignette: >
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, results = TRUE)
 ```
 
-
 # What was done?
 
 - The gencode annotation retrieved as gtf file is filtered for standard chromosomes. Transcripts with transcript support level <=3 or NA are only kept if no other transcript of the same gene with a higher levels exists.
