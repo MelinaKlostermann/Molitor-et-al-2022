@@ -19,17 +19,21 @@ We analysed PURA's in vivo binding behaviour to RNAs in iCLIP experiments. These
 * Input: binding sites (binding_sites.rds), filtered annotation (annotation.rds), crosslink bws of all 4 iCLIP experiments
 
 ## 5 Predict RNA accessibility and 5-mer frequencies considering mature transcript sequences (HeLa, endogenous PURA)
+* Input: fasta of transcripts,  binding sites with additional infos (binding_sites_characterized.rds), filtered annotation (annotation.rds), crosslinks (bw_merges.rds)
 
 ## 6 Comparison of binding to RNAseq changes
-* Input: deseq anaysis (deseq.rds), binding sites with additional infos (binding_sites_characterized.rds)
+* Input: deseq anaysis (deseq.rds), binding sites with additional infos (binding_sites_characterized.rds), crosslinks (bw_merges.rds)
 
 ## 7 Shotgun proteomics
+* Input: maxquant table, deseq anaysis (deseq.rds), count table with tpms (rnaseq_counts.rds),  binding sites with additional infos (binding_sites_characterized.rds)
 
 ## 8 Reviewer figure: difference in proteomics results between ProteinDiscoverer and Maxquant
+* Input: maxquant table with matching runs, maxquant table without matching runs, proteomeDiscoverer table (thermofisher), peptide table maxquant (with matching), peptide table thermofisher
 
 ## 9 Overlap of PURA binding with dendritic transcriptome  and with to p-body and stress granule enriched RNAs
+* Input: dendritic RNA table (Middleton et al 2019), RNAseq of pbody vs whole cell (Hubstenberger et al), RNAseq of stress granule vs whole cell (Khong et al),
+deseq anaysis (deseq.rds), count table with tpms (rnaseq_counts.rds),  binding sites with additional infos (binding_sites_characterized.rds)
 
-## 10 many Countplots 
 
 
 
@@ -48,3 +52,5 @@ We analysed PURA's in vivo binding behaviour to RNAs in iCLIP experiments. These
 - Krakau, S., Richard, H. & Marsico, A. 2017 - "PureCLIP: capturing target-specific protein–RNA interaction footprints from single-nucleotide CLIP-seq data." https://doi.org/10.1186/s13059-017-1364-2
 - RNApLfold: https://www.tbi.univie.ac.at/RNA/RNAplfold.1.html
 - Zhou Y, Zarnack K (2022). cliProfiler: A package for the CLIP data visualization. R package version 1.2.0, https://github.com/Codezy99/cliProfiler. 
+- Middleton et. al 2019 (doi:10.1186/s12915-019-0630-z)
+
