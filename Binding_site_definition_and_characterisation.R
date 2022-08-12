@@ -531,7 +531,7 @@ BS_intron$BS_region <- "intron"
 BS_assigned_regions <- c(BS_assigned_regions, BS_intron)
 
 #####################
-# Small RNAs are annotaed as genes
+# Small RNAs are annotated as genes
 #####################
 BS_other <- BS_with_all_regions[-queryHits(findOverlaps(
   BS_with_all_regions, BS_assigned_regions, type="any"))] %>% unique
