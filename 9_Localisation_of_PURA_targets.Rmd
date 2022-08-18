@@ -1,15 +1,11 @@
 ---
-title: "4 Comparison of the crosslink patterns in three different PURA iCLIP experiments from HeLa cells and NPC PURA iCLIP"
+title: "9 Comparison of PURA targets RNAs enriched in dendrites or cytoplasmic granules"
 author: "Melina"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
 output:
   BiocStyle::html_document:
     toc_float: TRUE
     toc: TRUE
-vignette: >
-  %\VignetteIndexEntry{AS USP39 KD}
-  %\VignetteEngine{knitr::rmarkdown}
-  %\VignetteEncoding{UTF-8}
 ---
 
 ```{r setup, include=FALSE}

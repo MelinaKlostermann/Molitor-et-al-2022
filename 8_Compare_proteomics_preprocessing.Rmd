@@ -7,10 +7,6 @@ output:
     toc_float: TRUE
     code_folding: hide
     toc: TRUE
-vignette: >
-  %\VignetteIndexEntry{AS USP39 KD}
-  %\VignetteEngine{knitr::rmarkdown}
-  %\VignetteEncoding{UTF-8}
 ---
 
 ```{r setup, include=FALSE}

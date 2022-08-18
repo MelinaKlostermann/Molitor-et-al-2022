@@ -6,10 +6,7 @@ output:
   BiocStyle::html_document:
     toc_float: TRUE
     toc: TRUE
-vignette: >
-  %\VignetteIndexEntry{AS USP39 KD}
-  %\VignetteEngine{knitr::rmarkdown}
-  %\VignetteEncoding{UTF-8}
+
 ---
 
 ```{r setup, include=FALSE}
@@ -72,7 +69,8 @@ anno_txdb <- makeTxDbFromGRanges(annotation)
 ```
 
 
-# Bound Gene types
+## Bound Gene types 
+--> many binding sites overlap with multiple genes (non codings!)
 
 ```{r}
 # anntotion of only genes, overlaps are resolved by keeping the longer gene
@@ -80,41 +78,55 @@ annotation_genes <- annotation[annotation$type=="gene"]
 annotation_genes <- sort(annotation_genes, by = ~ width + seqnames + start)
 
 #overlaps of crosslinks with genes
-ol <- findOverlaps(annotation_genes, binding_sites)
+ol <- findOverlaps(annotation_genes, binding_sites, ignore.strand=F)
 bs <- binding_sites
 bs$idx <- 1:NROW(bs)
 
 # get all possible regions overlapping with clrosslinked nucleotide
 bs_2 <- bs[subjectHits(ol)]
-bs_2$gene_id <- annotation_genes[queryHits(ol)]$gene_id
+elementMetadata(bs_2) <-  c(elementMetadata(bs_2), elementMetadata(annotation_genes[queryHits(ol), c("gene_id", "gene_type", "gene_name")]))
+
+NROW(bs_2)
+
+
+table(bs_2[duplicated(bs_2)]$gene_type)
+
+
+bs_3 <- bs_2 %>%  as.data.frame(.)  %>%
+  filter( gene_type != "TEC" & !grepl(pattern = "pseudo", gene_type)  ) %>%
+  makeGRangesFromDataFrame(keep.extra.columns = T)# remove uninteresting types
+
+NROW(bs_3)
+
+table(bs_3[duplicated(bs_3)]$gene_type)
 
 # choose type highest in hiearcy
-bs_3 <- as.data.frame(bs_2) %>%
-  group_by(idx) %>%
-  dplyr::slice(1)
-
-
-binding_sites_on_genes <- bs_3  
-
-# there are binding sites outside of annotated genes which are discarded here:
-NROW(binding_sites)
-NROW(binding_sites_on_genes)
-
-
-bound_genes <- annotation_genes[substr(annotation_genes$gene_id,1,15) %in% substr(binding_sites_on_genes$gene_id,1,15)]  %>% # get bound genes
- # remove overlapping gene annotation
-  as.data.frame(.)  %>%
-  filter( !duplicated(gene_id) ) %>%
-  filter( gene_type != "TEC" & !grepl(pattern = "pseudo", gene_type)  )# remove uninteresting types
-
-
-ggplot(bound_genes, aes(x = gene_type))+
-  geom_bar(fill = "blue")+
-  stat_count(aes(label=paste0(sprintf("%1.11f", ..count../sum(..count..)*100),
-                              "% \n", ..count..), y=0.5*max(..count..)), 
-             geom="text", colour="black", size=4, position=position_dodge(width=1)) +
-  coord_flip()+
-  theme_paper()
+# bs_3 <- as.data.frame(bs_2) %>%
+#   group_by(idx) %>%
+#   dplyr::slice(1)
+# 
+# 
+# binding_sites_on_genes <- bs_3  
+# 
+# # there are binding sites outside of annotated genes which are discarded here:
+# NROW(binding_sites)
+# NROW(binding_sites_on_genes)
+# 
+# 
+# bound_genes <- annotation_genes[substr(annotation_genes$gene_id,1,15) %in% substr(binding_sites_on_genes$gene_id,1,15)]  %>% # get bound genes
+#  # remove overlapping gene annotation
+#   as.data.frame(.)  %>%
+#   filter( !duplicated(gene_id) ) %>%
+#   filter( gene_type != "TEC" & !grepl(pattern = "pseudo", gene_type)  )# remove uninteresting types
+# 
+# 
+# ggplot(bound_genes, aes(x = gene_type))+
+#   geom_bar(fill = "blue")+
+#   stat_count(aes(label=paste0(sprintf("%1.11f", ..count../sum(..count..)*100),
+#                               "% \n", ..count..), y=0.5*max(..count..)), 
+#              geom="text", colour="black", size=4, position=position_dodge(width=1)) +
+#   coord_flip()+
+#   theme_paper()
 
 
 ```
@@ -122,26 +134,35 @@ ggplot(bound_genes, aes(x = gene_type))+
 
 
 # Bound gene regions of protein coding genes
+- gene regions are assignes vis hieracry: "three_prime_UTR", "five_prime_UTR", "CDS", "intron"
+- Problem: binding sites seem in IGV to be localised rather in non-coding RNAs that overlap introns then in introns (crosslinks only inside non-coding RNA) --> show be assigned rather to the non-coding RNA then to the preotein coding gene of the intron
+
+Strategy for binding site characterisation:
+- binding sites on protein coding genes are directly assigned to their region by hieracrcy: "three_prime_UTR", "five_prime_UTR", "CDS", "non-coding", "intron"
+- problem: lncRNAs have 3'UTRs etc assigned, miRNAs are only assigned as gene
+- in region plot we only show regions of protein coding genes anyway
+- therefore all non-coding RNAs are assigned to "region" non-coding irrespective of where in the non-coding RNA the binding site lyes
 
 ```{r}
 # classify only protein coding genes, regions only from bound genes
-anno_regions <- annotation[annotation$type %in% c("three_prime_UTR", "five_prime_UTR", "CDS") ]
-anno_regions <- anno_regions[anno_regions$gene_id %in% binding_sites_on_genes$gene_id]
-anno_regions <- anno_regions[anno_regions$gene_type == "protein_coding"]
+anno_regions <- annotation[annotation$gene_type == "protein_coding" & annotation$type %in% c("three_prime_UTR", "five_prime_UTR", "CDS") ]
 
-annotation_bound <- annotation[annotation$gene_id %in% binding_sites_on_genes$gene_id]
-annotation_bound_txdb <- makeTxDbFromGRanges(annotation_bound)
+# get all non coding RNAs
+non_coding_gene_annotation <- annotation %>% as.data.frame(.) %>%
+  filter(gene_type != "protein_coding", type == "gene") %>%
+  mutate(., type =  "non_coding_gene_without_region" ) %>% makeGRangesFromDataFrame(keep.extra.columns = T)
+
+table(non_coding_gene_annotation$gene_type )
 
 #get introns
-introns_bound_genes <- intronsByTranscript(annotation_bound_txdb) %>% unlist(.)
-introns_bound_genes$type = "intron"
-anno_regions <- c(anno_regions, introns_bound_genes)
+introns <- intronsByTranscript(anno_txdb, use.names=T) %>% unlist(.)
+introns$type = "intron"
+anno_regions <- c(anno_regions, non_coding_gene_annotation, introns)
 
 #overlaps of binding sites with genes
-binding_sites_on_genes <- makeGRangesFromDataFrame(binding_sites_on_genes, keep.extra.columns = T)
-ol_bs <- findOverlaps(anno_regions, binding_sites_on_genes, ignore.strand = FALSE, type ="any")
-bs <- binding_sites_on_genes
-bs$idx <- 1:NROW(binding_sites_on_genes)
+ol_bs <- findOverlaps(anno_regions, binding_sites-2, ignore.strand = FALSE)
+bs <- binding_sites
+bs$idx <- 1:NROW(binding_sites)
 
 # get all possible regions overlapping with clrosslinked nucleotide
 bs_2 <- bs[subjectHits(ol_bs)]
@@ -150,10 +171,28 @@ elementMetadata(bs_2) <- c(elementMetadata(bs[subjectHits(ol_bs)]), elementMetad
 # choose type highest in hiearcy
 bs_3 <- as.data.frame(bs_2) %>%
   group_by(idx) %>%
-  arrange(factor(type, levels = c("three_prime_UTR", "five_prime_UTR", "CDS", "intron")), .by_group = T) %>%
+  arrange(factor(type, levels = c("three_prime_UTR", "five_prime_UTR", "CDS", "intron", "non_coding_gene_without_region")), .by_group = T) %>%
   dplyr::slice(1)
 
 
+table(bs_3$gene_type)
+
+
+bs3 <- makeGRangesFromDataFrame(bs_3, keep.extra.columns = T)
+bs_without_region <- binding_sites_on_genes[-queryHits(findOverlaps(binding_sites_on_genes, bs3))]
+bs_without_region$type <- "no_region"
+
+
+# add gene infos
+
+binding_sites_with_regions <- c(makeGRangesFromDataFrame(bs_3, keep.extra.columns = T) , bs_without_region)
+
+```
+
+
+## bound gene regions
+
+```{r}
 ggplot(bs_3, aes(x=type))+
   geom_bar()+
   stat_count(aes(label=paste0(sprintf("%1.1f", ..count../sum(..count..)*100),
@@ -161,13 +200,6 @@ ggplot(bs_3, aes(x=type))+
              geom="text", colour="white", size=4, position=position_dodge(width=1)) +
   theme_paper()+
   ylab("Number of crosslink events")
-
-
-bs3 <- makeGRangesFromDataFrame(bs_3, keep.extra.columns = T)
-bs_without_region <- binding_sites_on_genes[-queryHits(findOverlaps(binding_sites_on_genes, bs3))]
-bs_without_region$type <- "no_region"
-
-binding_sites_with_regions <- c(makeGRangesFromDataFrame(bs_3, keep.extra.columns = T) , bs_without_region)
 
 ```
 
@@ -293,13 +325,13 @@ introns_for_norm$type = "intron"
 anno_for_norm <- c(anno_for_norm, introns_for_norm)
 anno_for_norm_r <- GenomicRanges::reduce(anno_for_norm)
 
-utr3 <- anno_for_norm[anno_for_norm$type=="three_prime_UTR"]
+utr3 <- anno_for_norm[anno_for_norm$type=="three_prime_UTR"] %>% reduce()
 anno_left <- GenomicRanges::setdiff(anno_for_norm_r, utr3, ignore.strand=FALSE)
 
-utr5 <- GenomicRanges::intersect(anno_left, anno_for_norm[anno_for_norm$type=="five_prime_UTR"] )
+utr5 <- GenomicRanges::intersect(anno_left, anno_for_norm[anno_for_norm$type=="five_prime_UTR"] )  %>% reduce()
 anno_left <- GenomicRanges::setdiff(anno_left, utr5, ignore.strand=FALSE)
 
-cds <- GenomicRanges::intersect(anno_left, anno_for_norm[anno_for_norm$type=="CDS"] )
+cds <- GenomicRanges::intersect(anno_left, anno_for_norm[anno_for_norm$type=="CDS"] )  %>% reduce()
 anno_left <- GenomicRanges::setdiff(anno_left, cds, ignore.strand=FALSE)
 
 intron <- GenomicRanges::intersect(anno_left, anno_for_norm[anno_for_norm$type=="intron"] )
