@@ -98,20 +98,14 @@ source("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/XX-helpful
 
 ```{r}
 # maxquant idnetification of proteins
-#maxquant_table <- readxl::read_excel("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/04-BioID-SILAC/03-Proteomics/XX_reprocessed_data/MOL13920_wo-repl3_MQ1670_withMBR_proteinGroups_LFQ1_matching.xlsx")
-maxquant_table <- readxl::read_excel("/Users/mariokeller/projects/code_revision/Molitor_2022_revision_files/raw/Proteomics/MOL13920_wo-repl3_MQ1670_withMBR_proteinGroups_LFQ1_matching.xlsx")
+maxquant_table <- readxl::read_excel("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/04-BioID-SILAC/03-Proteomics/XX_reprocessed_data/MOL13920_wo-repl3_MQ1670_withMBR_proteinGroups_LFQ1_matching.xlsx")
 
 # binding sites
-#BS <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/binding_sites_characterized.rds")
-BS <- readRDS("/Users/mariokeller/projects/code_revision/Molitor_2022_revision_files/rds/binding_sites_characterized.rds")
+BS <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/binding_sites_characterized.rds")
 
 # deseq analysis from PURA knockdown
-#res_RNAseq <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/deseq.rds")
-#rnaseq_counts_rlog <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/rlog_counts.rds")
-
-res_RNAseq <- readRDS("/Users/mariokeller/projects/code_revision/Molitor_2022_revision_files/rds/deseq.rds")
-rnaseq_counts_rlog <- readRDS("/Users/mariokeller/projects/code_revision/Molitor_2022_revision_files/rds/rlog_counts.rds")
-
+res_RNAseq <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/deseq.rds")
+rnaseq_counts_rlog <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/rlog_counts.rds")
 
 ```
 
