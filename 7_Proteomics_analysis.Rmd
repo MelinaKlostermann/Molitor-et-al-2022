@@ -34,6 +34,56 @@ source("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/XX-helpful
 
 ```
 
+```{r}
+################################################################################
+###                       CODE REVIEW SUMMARY                                ###
+################################################################################
+### 
+### Review by:          Mario Keller
+### Comment shortcut:   MK
+### Date:               17.08.2022 / 18.08.2022
+### Time spent:         ~3.5h
+
+# Main objective: 
+# - Identification of differentially regulated proteins
+# - Functional enrichment analysis of regulated proteins
+# - Overlap of regulated proteins and corresponding RNAs
+# - Overlap of protein regulation and binding information from iCLIP
+# Input:
+# - MaxQuant LFQ quantifcations as XLSX-File
+# - DESeq2 results and rlog-values as RDS-Files
+# - PURA binding sites as RDS-File
+#
+# # 
+# Major/ issues:
+# - Multiple hypothesis correction is based on the Holm method and not on BH
+# - As discussed in Slack still USS information is used 
+#
+# Minor/ suggestions:
+# - Most of the time you use the dplyr way to filter things but sometime you
+#   switch to subsetting data.frames via brackets (see line 149)
+# - You often produce new data.frames based on subsetting a certain data.frame.
+#   Most of the time it would be sufficient to add a column to the original 
+#   data.frame to create your subsets. 
+# - Sometimes things can be done with less code. I placed some shorter code at 
+#   selected positions
+# - In your ggplot code you often use xlim() and ylim() to adjust axes. This may
+#   be risky as you might remove entries from your data.frame. Better use 
+#   coord_cartesian(xlim=X, ylim=X)
+# - In the enrichment analysis you claim to use all proteins quantified by
+#   MaxQuant as the background, which is not true
+# - You use left_joins() to combine the protein and RNA log2FCs, where an 
+#   inner_join() would make more sense
+# - At some points you use code that has no effect like when you apply substr()
+#   on the gene identifier to remove the version, which is not part of the identifier
+# 
+# Conclusion:
+# - Analyses are reliable and trustworthy
+# - Well commented
+#
+```
+
+
 # What is done?
 
 - DEqMS analysis of shotgun proteomics data (preprocessed with maxquant)
@@ -57,7 +107,6 @@ BS <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-20
 res_RNAseq <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/deseq.rds")
 rnaseq_counts_rlog <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/rlog_counts.rds")
 
-
 ```
 
 # Clean up data from maxquant
@@ -67,6 +116,10 @@ maxquant_table <- maxquant_table %>% dplyr::rename(., gene_name = `Gene symbol`)
 
 # Found proteins, that are not matched to any gene:
 sum(is.na(maxquant_table$gene_name))
+
+### TODO MK
+### You count the NAs as duplicates. There are actually only 3 genes with 
+### more than one matched protein and not 93
 
 # Genes, that are matched to multiple proteins:
 sum(duplicated(maxquant_table$gene_name))
@@ -81,17 +134,21 @@ maxquant_table <- maxquant_table[!duplicated(maxquant_table$gene_name),]
 --> We exclude proteins with 2 or 3 missing values in either of the conditions
 
 ```{r}
+
+### TODO MK
+### You could do it in a more dplyr-way:
+### LFQs <- maxquant_table %>% dplyr::select(gene_name, dplyr::starts_with("LFQ"))
+### colnames(LFQs) <- c("gene_name", "kd1", "kd2", "kd3", "kd4", "wt1", "wt2", "wt3", "wt4")
+
 LFQs <- maxquant_table[,c(grepl(pattern = "LFQ", colnames(maxquant_table))|
                                                          grepl(pattern = "gene_name", colnames(maxquant_table)))] %>%
                as.data.frame()    
 colnames(LFQs) <- c("gene_name", "kd1", "kd2", "kd3", "kd4", "wt1", "wt2", "wt3", "wt4")
 
-
 # sum fall outs
 LFQs[LFQs==0] = NA
 LFQs$na_kd <- apply(LFQs,1, function(y) sum(is.na(y[2:5])))
 LFQs$na_wt <- apply(LFQs,1, function(y) sum(is.na(y[6:9])))
-
 
 LFQ_filt <- LFQs %>% dplyr::filter(., (na_wt %in% c(0,1)) & (na_kd %in% c(0,1)))
 
@@ -121,6 +178,10 @@ boxplot(protein.matrix.linear)
 
 
 ```{r}
+### TODO MK
+### Why do you put the code into a function if it is executed only once?
+
+
 ###################
 # function DEqMS
 ###################
@@ -187,6 +248,10 @@ rownames(protein.matrix) = LFQ_filt$gene_name
 #####################
 deqms <- f_DEqMS(protein_matrix = protein.matrix.linear, pep_count_table = pep.count.table)
 
+
+### TODO MK
+### You can remove the rowwise() if you use logFC = ifelse(na_wt == 4, Inf,-Inf)
+
 # readd proteins with 4 fall outs in one catagory (without statistics)
 LFQ_4_zeros_d <- LFQ_4_zeros[,c("gene_name", "na_wt", "na_kd")] %>%
   rowwise(.) %>%
@@ -211,6 +276,10 @@ proteomics_deqms <- rbind(deqms, LFQ_4_zeros_d[, c(4:14, 1)])
 ## Vulcano proteomics
 
 ```{r}
+
+### TODO MK
+### The + is missing infront of xlim()
+
 ggplot(proteomics_deqms, aes(x = logFC, y = (-log10(sca.adj.pval))))+
    geom_point(color ="grey", shape =1)+
    geom_point(data = proteomics_deqms[(proteomics_deqms$sca.adj.pval< 0.05) & (abs(proteomics_deqms$logFC) > log(0.5)), ],
@@ -251,6 +320,9 @@ ggplot(pura_protein_counts, aes(x = variable, y = value, color = group))+
 
 ```
 ```{r}
+### TODO MK
+### You could place this chunk at the beginning of the next section
+
 # set significance
 p_cut_prot <- 0.05
 p_cut_rna <- 0.01
@@ -269,11 +341,20 @@ p_cut_rna <- 0.01
 reactome_geneset <- msigdb_gsets("Homo sapiens", "C2", "CP:REACTOME")
 cell_comp_geneset <- msigdb_gsets("Homo sapiens", "C5", "CC")
 
+### TODO MK
+### Just to be sure. You intended to also include the proteins with 4 fallouts
+### in one of the conditions?
+
 # proteomics_limma sig
 res_sig_kd_list <- list( up = proteomics_deqms %>% filter((sca.adj.pval < p_cut_prot) & (logFC  > 0)) %>% pull(., gene_name),
                   down = proteomics_deqms %>% filter(sca.adj.pval < p_cut_prot & logFC  < 0) %>% pull(., gene_name)
                   )
-                  
+       
+### TODO MK
+### These are not all proteins detected by maxquant. These are all proteins 
+### that fulfilled your fallout criterions. nrow(proteomics_deqms) = 4502 and
+### nrow(maxquant_table) = 4946
+
 # background: all proteins detected by maxquant
 bg <- proteomics_deqms$gene_name
 
@@ -288,6 +369,12 @@ hyps_cell_comp <-  purrr::map(res_sig_kd_list,  ~hypeR(.x, cell_comp_geneset, te
 # customise reactome for paper
 #########################
 
+### TODO MK
+### In the manuscript you state that you used BH for multiple hypothesis correction.
+### But if you do not provide a method to p.adjust it uses the "holm" method by default.
+### In hyps_reactome[[2]]$data you have a fdr column, which are the BH corrected
+### P values. 
+
 r_down = hyps_reactome[[2]]$data %>% mutate(group = "down", padj = p.adjust(pval))
 r_up = hyps_reactome[[1]]$data %>% mutate(group = "up",  padj = p.adjust(pval))
 
@@ -296,7 +383,22 @@ reactome_go_cust <- rbind(r_down, r_up) %>% arrange(padj) %>% mutate(label = tol
 reactome_go_cust_print <- reactome_go_cust %>% as.data.frame()
 #xlsx::write.xlsx(reactome_go_cust_print, file =  paste0(outpath, "reactome_proteomics_table.xlsx"))
 
+
+### TODO MK
+### Why don't you use reactome_go_cust <- reactome_go_cust[1:20, ] or 
+### reactome_go_cust <- reactome_go_cust %>% slice(1:20) when you just want to have
+### the top20 enriched terms
+
 reactome_go_cust <- reactome_go_cust[reactome_go_cust$label %in% reactome_go_cust[1:20,]$label, ]
+
+### TODO MK
+### At least for this data the fill provides no information as you don't have 
+### something that is >= 0.05. In general, all your terms have an FDR between 0 and 0.1
+
+### TODO MK
+### Also regarding the fdr. You use your adjusted P values to order the terms but
+### but for the fill you use the fdr reported by hypeR. You should use the same
+### column for arraning the data and setting the fill
 
 ggplot(reactome_go_cust, aes(y = generatio, x = factor(label, level = rev(unique(label))), fill = fdr <0.05))+
   geom_col()+
@@ -322,6 +424,10 @@ cc_go_cust_print <- cc_go_cust %>% as.data.frame()
 #xlsx::write.xlsx(cc_go_cust_print, file =  paste0(outpath, "cc_proteomics_table.xlsx"))
 
 cc_go_cust <- cc_go_cust[cc_go_cust$label %in% cc_go_cust[1:25,]$label, ]
+
+### TODO MK
+### Why do you change the fdr cutoff for the fill (0.05 to 0.01)? Again the fill
+### is not necessary
 
 ggplot(cc_go_cust, aes(y = generatio, x = factor(label, level = rev(unique(label))), fill = fdr <0.01))+
   geom_col()+
@@ -354,6 +460,13 @@ colnames(proteomics_deqms ) <- paste(colnames(proteomics_deqms ), "prot", sep = 
 # rename rnaseq columns
 colnames(res_RNAseq) <- paste(colnames(res_RNAseq), "rnaseq", sep = ".") 
 
+
+### TODO MK
+### If you want to have only entries with protein and RNA log2FCs why don't 
+### you use inner_join()? With left_join() you have proteins with no
+### DESeq2 entry(eg. MPP6). You likely filter these cases later but I think
+### it is best to use innter_join() to directly get rid of these cases.
+
 # combine
 prot_vs_RNA <- proteomics_deqms %>% left_join(res_RNAseq, by = c(gene_name.prot = "hgnc_symbol.rnaseq"))
 
@@ -366,6 +479,14 @@ prot_vs_RNA  <- prot_vs_RNA  %>% group_by(gene_name.prot) %>% arrange(desc(log2F
 ########################
 gg_df_infinite <- prot_vs_RNA [!is.finite(prot_vs_RNA$logFC.prot), ]
 gg_df_sig <- prot_vs_RNA  %>% filter(sca.adj.pval.prot < p_cut_prot & padj.rnaseq < p_cut_rna)
+
+### TODO MK
+### The generation of this plot looks super complicated. Also the significant
+### entries are present more than once in the plot (plotted on top of each other).
+### You could add a category column to prot_vs_RNA (e.g cat = inf, sig, not) and pipe
+### prot_vs_RNA to ggplot (prot_vs_RNA %>% ggplot()) you can then filter the
+### dataframe in each geom (e.g. geom_point(. %>% filter(cat == "sig"))). I think
+### this would increase the readability 
 
 ggplot(prot_vs_RNA[is.finite(prot_vs_RNA$logFC.prot), ], aes(x = logFC.prot, y= log2FoldChange.rnaseq))+ #, shape = ifelse(!is.finite(logFC.prot_limma), "inf", "")
   geom_vline(xintercept = 0)+
@@ -428,6 +549,14 @@ plot(venn, quantities = TRUE, shape = "ellipse")
 # Overlap with RNAseq and iCLIP
 
 ```{r overlap_RNAseq_CLIP}
+
+### TODO MK
+### substr(BS$gene_id,1,15) does not have an effect as there is no version at 
+### the end of the gene identifier. I think it's also risky to use substr() to
+### remove versions as if this code is recyclded for another organism with for
+### instance 13 positions in the gene identifier, one would end up with truncated
+### identifiers. Better use BS$gene_id %>% strsplit(".", fixed=T) %>% sapply("[[", 1)
+
 all_targets <- c(up_pro, down_pro, up_RNA, down_RNA, substr(BS$gene_id,1,15)) %>% unique() %>% na.omit()
 
 BS_genes <- substr(BS$gene_id,1,15) %>% unique() %>% na.omit()
@@ -473,13 +602,26 @@ BS_strongest_per_gene <- as.data.frame(BS) %>% group_by(gene_id) %>%
   slice(1) %>%
   ungroup(.)
 
+### TODO MK
+### Again the substr() has no effect
+
 BS_strongest_per_gene$gene_id <- substr(BS_strongest_per_gene$gene_id, 1,15)
+
+
+### TODO MK
+### Again I think an inner_join() is better
 
 prot_vs_RNA_BS <- left_join(prot_vs_RNA, BS_strongest_per_gene[c("seqnames", "start", "end", "width", "strand", "gene_id", "score", "type")], by =
                               c(gene_id.rnaseq= "gene_id")) %>% ungroup(.) %>% as.data.frame(.)
 
 prot_vs_RNA_BS_gg <- prot_vs_RNA_BS %>% mutate(., bound = case_when( !is.na(type) ~ "PURA-bound",
                                                                   T ~ "Not bound")) 
+
+### TODO MK
+### It is not clear that you look at features (e.g. CDS, 5'UTR ...) of 
+### protein-coding genes. You remove the labels of the facets with the last
+### theme() call. Also using different colors (one is sufficient) does not 
+### provide further information as features are already separated via the facets.
 
 # color vulcano by regions
 ggplot(prot_vs_RNA_BS_gg, aes(y = -log10(sca.adj.pval.prot), x = logFC.prot))+
@@ -550,6 +692,9 @@ gene_names <- map(gene_ids_list, ~prot_vs_RNA_BS[prot_vs_RNA_BS$gene_id.rnaseq %
 gene_ids <- c(unlist(gene_ids_list))
 gene_names <- c(unlist(gene_names))
 
+### TODO MK
+### The rbind seems to be unnecessary
+
 ########## matrix rna counts
 rna_matrix <- rbind( rnaseq_counts_rlog[gene_ids,])
 rownames(rna_matrix) <- gene_names 
@@ -560,6 +705,16 @@ protein_matrix[protein_matrix == 0] <- NA
 
 list_heat_matix <- list(rna_matrix, protein_matrix)
 
+
+### TODO MK
+### Two version with less code
+### for(i in 1:length(list_heat_matix)){
+###   list_heat_matix[[i]] <- list_heat_matix[[i]] %>% apply(., 1, function(row){(row-mean(row))/sd(row)})
+### }
+### 
+### for(i in 1:length(list_heat_matix)){
+###   list_heat_matix[[i]] <- (list_heat_matix[[i]] - rowMeans(list_heat_matix[[i]])) / matrixStats::rowSds(list_heat_matix[[i]])
+### }
 ############### z-score
 for(i in 1:length(list_heat_matix)){
 
@@ -593,6 +748,9 @@ list_heat_matix[[i]] <- list_heat_matix[[i]] / sds
 # rownames_clustered <- names(sort(cluster$cluster)) 
 # clustered_matrix_2 <- list(list_heat_matix[[1]][rownames_clustered,], list_heat_matix[[2]][rownames_clustered,])
 
+### TODO MK
+### As discussed in Slack you do not want to use information from USS
+
 ########### scores
 bs_group <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/02-Comp-iCLIPs/07-UTR-vs-CDS/Report51-output/USS_with_names.rds")
 binding_group <- data.frame(gene_name = gene_names ) %>%
@@ -607,6 +765,10 @@ l2fc = data.frame(gene_name = gene_names ) %>%
 l2fc_protein <- data.frame(gene_name = gene_names ) %>%
   left_join(.,prot_vs_RNA_BS[, c("logFC.prot", "gene_name.prot")], by = c(gene_name = "gene_name.prot") ) %>%
               pull(logFC.prot) 
+
+### TODO MK
+### Would it make sense to set the Infinite values to the absolute maximum non-infinite value
+### in your log2FCs? Would be +/- 2.2154777
 
 # set Inf to highest number to plot
 l2fc_protein[is.infinite(l2fc_protein) & l2fc_protein > 0 ] <- 2.5
