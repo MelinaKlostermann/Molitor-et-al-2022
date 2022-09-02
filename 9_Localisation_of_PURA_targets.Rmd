@@ -31,6 +31,48 @@ theme_set(theme_paper())
 
 ```
 
+
+```{r}
+################################################################################
+###                       CODE REVIEW SUMMARY                                ###
+################################################################################
+### 
+### Review by:          Mario Keller
+### Comment shortcut:   MK
+### Date:               02.09.2022
+### Time spent:         ~1.5h
+
+# Main objective: 
+# - Overlap of PURA binding and dendritic expression and localization to p-bodies
+#   and stress granules
+# Input:
+# - Binding information as RDS-File
+# - DESeq2 results as RDS-File
+# - TPM values as RDS-File
+# - Dendritic expression, p-body and stress granule enrichment information as 
+#   RDS-Files
+#
+# 
+# Major/ issues:
+# - None. Just picky minor comments :)
+#
+# Minor/ suggestions:
+# - Sometimes a little bit more comments would be helpful
+# - Most of the time you use the dplyr way to filter things but sometime you
+#   switch to subsetting data.frames via brackets 
+# - Sometimes you pipe the data.frame into dplyr functions and sometimes you 
+#   use them as first argument in the function. Decide for one way.
+# - Variable names are sometimes not very informative 
+# - You forgot to multiply the bound ratio ($ratio_bound) by 100 in the plot
+#
+# Conclusion:
+# - Analyses are reliable and trustworthy
+# - Most of the time well commented
+#
+
+```
+
+
 # What was done?
 
 - Overlap of PURA bound to dendritic RNAs from 6 indipendent RNAseqs of mice dendrites
@@ -54,7 +96,6 @@ dendritic_RNAs <- readxl::read_xlsx("/Users/melinaklostermann/Documents/projects
 pb_transcriptome <- readxl::read_xlsx("/Users/melinaklostermann/Documents/projects/PublicData/p-body/1-s2.0-S1097276517306512-mmc3.xlsx")
 # stress granule transcriptome
 sg_transcriptome <- readxl::read_xlsx("/Users/melinaklostermann/Documents/projects/PublicData/Stress_granule/1-s2.0-S1097276517307906-mmc2.xlsx")
-
 
 ```
 
@@ -99,6 +140,12 @@ info_biomart_new <- getBM(attributes=my_attributes,
                         # values = dendritic_RNAs$GeneName,
                         mart = ensembl38p13, useCache = F)
 
+### TODO MK
+### Above you claim to match by a 1-2-1 orthology but you removed this step.
+### What is happening if the mouse gene matches more than one human gene?
+### There are 103 duplication events where the mmusculus gene name occurs more than once:
+###   info_biomart_new %>% filter(mmusculus_homolog_associated_gene_name %in% dendritic_RNAs$GeneName) %>% pull(mmusculus_homolog_associated_gene_name) %>% duplicated %>% sum
+### I saw that you check for the 1-2-1 relation in the chunk below. I would then change the comment above.
 
 dendritic_RNAs <- left_join(dendritic_RNAs, info_biomart_new, by = c(GeneName = "mmusculus_homolog_associated_gene_name")) #%>% dplyr::filter(., mmusculus_homolog_orthology_type == "ortholog_one2one")
 # save(dendritic_RNAs, file = paste0(outpath, "dendritic_RNAs_with_human_ortholog_one2one.RData"))
@@ -116,8 +163,6 @@ dendritic_RNAs <- mutate(dendritic_RNAs, HeLa_expressed = case_when(
   (ensembl_gene_id %in% HeLa_expression$ensembl_gene_id) & (mmusculus_homolog_orthology_type == "ortholog_one2one") ~ "HeLa_expressed",
                                                                      T ~ "not_HeLa_expressed"))
 
-                                                                       
-
 ###################
 # plot dendritic perspective
 ##################
@@ -127,6 +172,11 @@ dend_df <- data.frame( all_dend = rep(T,nrow(dendritic_RNAs))) %>%
          HeLa_expression = case_when(dendritic_RNAs$HeLa_expressed == "HeLa_expressed" ~ T, T~ F )) 
 dend_df <- colSums(dend_df) %>% reshape2::melt(.)
 dend_df$variable <- factor(rownames(dend_df), levels =  rownames(dend_df))        
+
+### TODO MK
+### I don't like the visualization as bar charts as it is quite misleading.
+### From right to left the bars are subsets of the other bars. A venn diagram with 
+### the eulerr package or a stacked bar chart wou would have been more appropriate
 
 ggplot(dend_df)+
   geom_col(aes(x = variable, y = value, fill = variable), position = "dodge")+
@@ -139,6 +189,9 @@ ggplot(dend_df)+
 ###################
 # HeLa perspective
 ##################
+
+### TODO MK
+### See above
 
 hela_df <- data.frame( all_HeLa= rep(T,nrow(HeLa_expression))) %>%
   mutate(Mouse_ortholog = case_when(HeLa_expression$mmusculus_homolog_orthology_type == "ortholog_one2one" ~ T, T ~ F ),
@@ -159,6 +212,10 @@ ggplot(hela_df)+
 
 ```{r}
 
+### TODO MK
+### Probably a more elegant way if there are only two cases:
+###   dendritic_RNAs <- mutate(dendritic_RNAs, bound = ifelse(ensembl_gene_id %in% BS$gene_id, "PURA-bound","No binding"))
+
 dendritic_RNAs <- mutate(dendritic_RNAs, bound = case_when(
   ensembl_gene_id %in% BS$gene_id ~ "PURA-bound",
   T ~ "No binding"
@@ -168,6 +225,13 @@ dendritic_RNAs <- mutate(dendritic_RNAs, bound = case_when(
 ##################
 # plot num studies perspective
 ###################
+
+### TODO MK
+### The naming of your variables is sometimes confusing. Above you have a data.frame
+### named hela_df and now you create df_hela. Sometimes a little bit more information
+### in the variable names is helpful. It's not obivious that the data.frame stores
+### dendritic genes with a 1-2-1 human gene that is expressed in HeLa cells
+
 df_hela <- dendritic_RNAs %>% filter((HeLa_expressed == "HeLa_expressed") & (mmusculus_homolog_orthology_type == "ortholog_one2one"))
 
 ggplot(df_hela, aes(x = NumStudiesFound, fill = bound))+
@@ -219,10 +283,25 @@ ggplot(gg_df, aes( x ="", y=value, fill = group))+
 ## Overlap of pb and sg enriched RNAs with PURA bound RNAs
 
 ```{r}
+
+### TODO MK
+### Sometimes you provide the data.frame as first argument in mutate() and 
+### sometimes you pipe the data.frame into mutate() 
+### Make it consistent.
+
 # rename tables
 pb_transcriptome <- mutate(pb_transcriptome, l2fc = as.numeric(`RNA enrichment in P-body (log2) (Fold change=sorted P-bodies/pre-sorted fraction)`), pfdr = as.numeric(`adjusted p-value (FDR) of RNA enrichment`)  )
 sg_transcriptome <- sg_transcriptome %>% mutate(l2fc = log2(`Fold change`))
 
+
+### TODO MK
+### In the rest of the chunk you always use [] for subsetting but you could have
+### also used the dplyr-way:
+###   tpms <- rnaseq_counts %>% dplyr::select(gene_id, mean_tpm_rnaseq)
+###   pb_transcriptome_expr <- pb_transcriptome %>% filter(`Ensembl Gene ID` %in% tpms$gene_id)
+
+### TODO MK
+### Why do you have NAs in tpms$mean_tpm_rnaseq?
 
 # get pb_transcriptome and sg_transcriptome tpms from our HeLa RNAseq
 tpms <- rnaseq_counts[, c("gene_id", "mean_tpm_rnaseq")]
@@ -283,6 +362,10 @@ pb_up_transcriptome_tpm_cutoffs_bound <- map2_dfr(pb_up_transcriptome_tpm_cutoff
 
 pb_tpm_cutoffs_bound <- mutate(pb_up_transcriptome_tpm_cutoffs_bound, ratio_bound = bound / all_over_tpm_cut)
 
+### TODO MK
+### You need to multiply $ratio_bound by 100 to get percentage at a cutoff of 1000
+### you have 100% bound and not 1%
+
 ggplot(pb_tpm_cutoffs_bound, aes(x = as.factor(tpm_cut), y = ratio_bound, label = all_over_tpm_cut))+
   geom_col(position = "identity")+
   geom_text(aes(label=paste(round(ratio_bound,2), "% \n of", all_over_tpm_cut)), 
@@ -317,6 +400,9 @@ sg_transcriptome_up_tpm_cutoffs_bound <- map2_dfr(sg_transcriptome_up_tpm_cutoff
 
 
 sg_tpm_cutoffs_bound <- mutate(sg_transcriptome_up_tpm_cutoffs_bound, ratio_bound = bound / all_over_tpm_cut)
+
+### TODO MK
+### See above
 
 ggplot(sg_tpm_cutoffs_bound, aes(x = as.factor(tpm_cut), y = ratio_bound, label = all_over_tpm_cut))+
   geom_col(position = "identity")+
