@@ -59,6 +59,8 @@ proteomics_tables <- list( thermo_fisher = readxl::read_excel("/Users/melinaklos
 
 p_cut_prot <- 0.05
 
+
+
 ```
 
 
@@ -80,6 +82,8 @@ Found proteins, that are not matched to any gene:
 
 ```{r}
 map(proteomics_tables, ~sum(is.na(.x$gene_name)))
+
+grep(proteomics_tables[[1]]$gene_name, pattern = ";", value =T)
 
 ```
 
@@ -105,7 +109,6 @@ proteomics_tables <- lapply(proteomics_tables, function(x){
 ## Overlap of found genes, that the proteins belong to
 
 ```{r}
-
 
 all = c(proteomics_tables[[1]]$gene_name, proteomics_tables[[2]]$gene_name, proteomics_tables[[3]]$gene_name) %>% unique() %>% na.omit()
 
@@ -155,7 +158,7 @@ LFQs <- lapply(LFQs, function(x){
 
 LFQs_t <- map(LFQs, ~reshape2::melt(.x))
 
-LFQs_t2 <- full_join(LFQs_t[[1]], LFQs_t[[2]], by = c("gene_name", "variable"), suffix = c(".tf", ".mq_ma"))
+LFQs_t2 <- s(LFQs_t[[1]], LFQs_t[[2]], by = c("gene_name", "variable"), suffix = c(".tf", ".mq_ma"))
 LFQs_t2 <- full_join(LFQs_t2, LFQs_t[[3]], by = c("gene_name", "variable"), suffix = c("", ".mq_noma"))
 
 LFQs_t3 <- reshape2::melt(LFQs_t2)
