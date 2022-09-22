@@ -27,7 +27,7 @@ library(Biostrings)
 library(BSgenome)
 
 
-source("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/XX-helpful-chunks/theme_paper.R")
+source("~/Desktop/Project/Code review/Molitor-et-al-2022/theme.R")
 
 ``` 
 
@@ -41,17 +41,17 @@ source("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/XX-helpful
 
 ```{r}
 ## transcript sequences fasta from gencode
-transcript_fasta <- readDNAStringSet("/Users/melinaklostermann/Documents/projects/anno/GENCODEv31-p12/gencode.v31.transcripts.fa.gz")
+transcript_fasta <- readDNAStringSet("~/Desktop/Data/code review/gencode.v31.transcripts.fa")
 
 # binding sites
-BS <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/binding_sites_characterized.rds")
+BS <- readRDS("~/Desktop/Data/code review/binding_sites_characterized.rds")
 
 # crosslinks
-CL_list <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/bw_merges.rds")
+CL_list <- readRDS("~/Desktop/Data/code review/bw_merges.rds")
 cl <- c(CL_list[[1]], CL_list[[2]])
 
 # filtered annotation
-annotation <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/annotation.rds")
+annotation <- readRDS("~/Desktop/Data/code review/annotation.rds")
 
 ```
 
@@ -75,7 +75,7 @@ expressed_transcripts_GR_list <- subsetByOverlaps(annotation_transcripts_exons, 
 
 
 # sequence of all transcripts
-transcript_fasta <- readDNAStringSet("/Users/melinaklostermann/Documents/projects/anno/GENCODEv31-p12/gencode.v31.transcripts.fa.gz") #alternative extractTranscriptSeqs(x, transcripts, ...)
+transcript_fasta <- readDNAStringSet("~/Desktop/Data/code review/gencode.v31.transcripts.fa") #alternative extractTranscriptSeqs(x, transcripts, ...)
 transcript_anno_meta <- names(transcript_fasta) 
 transcript_anno_meta <- data.frame(all = transcript_anno_meta) %>%
   tidyr::separate(., col = all,
@@ -86,7 +86,12 @@ names(transcript_fasta) <- substring(transcript_anno_meta$transcript_id,1,15)
 
 # get transcript coordinates as GRanges
 transcriptome_seqs_coords <- GRanges(seqnames = names(transcript_fasta), IRanges(start = 1, width = width(transcript_fasta)), strand = "+")
-transcriptome_seqs_coords_expr <- transcriptome_seqs_coords[seqnames(transcriptome_seqs_coords) %in% substring(expressed_transcripts$tx_name,1,15)]
+
+#################################################################################
+## this object is empty, I think the object expressed_transcripts do not contains the tx_name
+#################################################################################
+
+transcriptome_seqs_coords_expr <- transcriptome_seqs_coords[seqnames(transcriptome_seqs_coords) %in% substring(expressed_transcripts$transcript_id,1,15)] # Here I change the tx_name to transcript_id
 
 
 ###########################
@@ -94,7 +99,7 @@ transcriptome_seqs_coords_expr <- transcriptome_seqs_coords[seqnames(transcripto
 ##########################
 
 # prepare a txdb of expressed transcripts
-expressed_transcripts_txdb <- unlist(expressed_transcripts_GR_list)
+expressed_transcripts_txdb <- unlist(expressed_transcripts_GR_list) ## this object are not used in the script
 txdb <- makeTxDbFromGRanges(unlist(expressed_transcripts_GR_list))
 
 # prepare a transcript mapper (contains transcript ids and names together with genomic positions of transcripts)
@@ -138,6 +143,10 @@ BS_tx_501nt <- makeGRangesFromDataFrame(BS_tx_501nt, keep.extra.columns = T)
 BS_tx_501nt <- BS_tx_501nt[width(BS_tx_501nt) == 501]
 
 # only one transcript per BS
+
+#################
+## I think this code will randomly assign the BS to the transcript which may differ from the transcript IT in your BS object.
+#################
 BS_tx_501nt <- BS_tx_501nt[!duplicated(BS_tx_501nt$xHits)]
 
 # get transcript sequences of enlarged BS 
@@ -167,7 +176,7 @@ random_transcripts$transcript_id <- big_transcript_fasta_df[random_transcripts$t
 # sequences of random expressed transcripts set
 random_transcript_seqs <-  transcript_fasta[names(transcript_fasta) %in% random_transcripts$transcript_id,] 
 
-# subset for random window of 300 nt
+# subset for random window of 501 nt
 w_2 <- (2*w + 5)
 random_transcript_seqs_500 <- random_transcript_seqs
 random_transcript_seqs_pos <- list()
@@ -260,7 +269,7 @@ head(probs)
 
 ```{r eval = F }
 
-load("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/RNApl_endo_BS_trans_500nt.RData")
+load("~/Desktop/Data/code review/RNApl_endo_BS_trans_500nt.RData")
 
 #  log-odds ratio
 ##############################
@@ -349,10 +358,18 @@ ggplot(df_accessibility_bs_bg, aes(x=pos))+
 BS_3UTR <- BS[BS$type=="three_prime_UTR"] %>% mapToTranscripts(., txdb, extractor.fun = GenomicFeatures::exonsBy, use.names =T) %>% 
   as.data.frame() %>%
   mutate(seqnames = substring(seqnames,1,15), strand ="+") %>%
-  distinct(xHits, .keep_all = T) %>%
+  distinct(xHits, .keep_all = T) %>%  ## this code randomly assign BS to transcript, which may lead to some inconsistencies. There are about 4899 BS sites are assigned to a different transcript. I would suggest to check this out.
   filter(start >0 & end >0)%>%
    makeGRangesFromDataFrame(keep.extra.columns = T)
  
+############ Checking the consistency of transcript assignment ################
+tmp <- BS[BS$type=="three_prime_UTR"]
+## keep the BS which present in BS_3UTR
+tmp <- tmp[BS_3UTR$xHits]
+tmp$trans_id2 <- seqnames(BS_3UTR)
+sum(substr(tmp$transcript_id, 1,15) != tmp$trans_id2)
+###############################################################################
+
 BS_3UTR <- BS_3UTR[seqnames(BS_3UTR) %in% substr(names(transcript_fasta),1,15)]
 seqences_BS_3utr <- getSeq(x = transcript_fasta, names = BS_3UTR)
 
@@ -361,7 +378,7 @@ seqences_BS_3utr <- getSeq(x = transcript_fasta, names = BS_3UTR)
 BS_CDS <- BS[BS$type=="CDS"] %>% mapToTranscripts(., txdb, extractor.fun = GenomicFeatures::exonsBy, use.names =T) %>% 
   as.data.frame() %>%
   mutate(seqnames = substring(seqnames,1,15), strand ="+") %>%
-  distinct(xHits, .keep_all = T) %>%
+  distinct(xHits, .keep_all = T) %>% ## The some to 3'UTR part
   filter(start >0 & end >0)%>%
    makeGRangesFromDataFrame(keep.extra.columns = T)
  
@@ -377,7 +394,7 @@ threeUTR_transcript_anno <- mapToTranscripts(unlist(threeUTRsByTranscript(txdb, 
   GenomicRanges::reduce() %>%
   as.data.frame() %>% 
   mutate(seqnames = substring(seqnames,1,15), strand ="+") %>%
-  distinct(seqnames, .keep_all = T) %>%
+  distinct(seqnames, .keep_all = T) %>% 
   makeGRangesFromDataFrame() 
 
 threeUTR_transcript_anno <- threeUTR_transcript_anno[seqnames(threeUTR_transcript_anno) %in% substring(expressed_transcripts$transcript_id,1,15)] 
@@ -510,6 +527,7 @@ plot_freq_scatter <- function(gr_regions, bg, oligo, title, window, color_thresh
 }
 
 # use function to make plots
+###### the width between gr_regions and bg is different, I think this may lead to some problem when we count the frequency ######
 plot_freq_scatter(gr_regions = c(BS_CDS, BS_3UTR)+5, bg = c(random_bg_cds, random_bg_3utr), oligo = 5, window =20, color_thresh = 3,
                   #filename= "all_BS+5_5nt_Freq_20nt_against_bg.pdf",
                   title="all_BS+5_5nt_Freq_20nt_against_bg")
