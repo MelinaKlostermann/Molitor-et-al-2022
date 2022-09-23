@@ -44,9 +44,57 @@ library(hypeR)
 report_color <- (pals::ocean.solar(15))
 
 source("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/XX-helpful-chunks/theme_paper.R")
-
 ``` 
 
+```{r}
+################################################################################
+###                       CODE REVIEW SUMMARY                                ###
+################################################################################
+### 
+### Review by:          Mirko Brüggemann
+### Comment shortcut:   MB
+### Date:               23.09.2022
+### Time spent:         ~2h
+
+# Main objective: 
+# Define binding profile for PURA binding sites, by overlapping with given 
+# GENCODE annotation
+# 
+# Input:
+# - PureCLIP binding sites from script 1
+# - gene annotation as of gencode v31 as GFF3 and rds
+# 
+# Minor tasks the script performs are: 
+# - match each binding site to a hosting transcript and transcript region
+# - Collects additional features of binding sites (Strongest per gene, gene profile)
+# - comparison with TPM values from a different dataset
+# 
+# Major/ issues:
+# - Hard to follow the code logic, very little comments and variables are often not 
+#   self explanatory. 
+# - Some objects then do have explanatory names, but then they do not 
+#   contain what the names suggests (eg strongest_BS does not contain binding sites,
+#   but rather a sum of nts coverged by binding sites grouped by the region type).
+# - In the part that identifies the bound gene type, the description said that the
+#   longest transcript is used if multiple are present. But I found an example 
+#   where this is not the case. (Maybe check this one, could also be that I got lost in the code)
+# - The final output file (binding_sites_with_regions) contains a lot of NAs and 
+#   is not clean (douplicated gene_id fields, that are sometimes NA and sometimes not)
+#
+# Minor/ suggestions:
+# - The gene annotation is included once as gff3 and once as GRanges loaded from a 
+#   precompiled rds file. And an additional txdb is generated and used as well.
+#   This seems a bit redundant 
+# - A lot of prints that produce unexpected result (eg. table(x) is used on object x
+#   but the result is not a table, but rather a single number. )
+# - Parts of the script contain code that is set to eval=FALSE, include=FALSE
+# - At least one code chunk could not be evaluated since it took longer than 2 min
+#   to execute. 
+# 
+# Nice job! 
+# Feel free to review the review :) 
+#
+```
 
 # Input
 
@@ -67,6 +115,9 @@ rnaseq_counts <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molit
 gff3 <- "/Users/melinaklostermann/Documents/projects/anno/GENCODEv31-p12/gencode.v31.annotation.gff3" # for cliProfiler
 annotation <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/annotation.rds")
 
+### TODO MB
+### For effciency, prebuild the TxDb and store it as .rds which is then only loaded upon execution.
+### 
 anno_txdb <- makeTxDbFromGRanges(annotation)
 
 ```
@@ -75,9 +126,23 @@ anno_txdb <- makeTxDbFromGRanges(annotation)
 # Bound Gene types
 
 ```{r}
+### TODO MB
+### 1) when sorting GRanges, always sort seqlevels first -> sort(sortSeqlevels(x))
+###
+
 # anntotion of only genes, overlaps are resolved by keeping the longer gene
 annotation_genes <- annotation[annotation$type=="gene"] 
 annotation_genes <- sort(annotation_genes, by = ~ width + seqnames + start)
+
+### TODO MB
+### 1) unnecessary reassignment of bs = binding_sites
+### 2) bs$idx is the same as bs$names
+### 3) hard to follow code logic
+### 4) not sure about the matching result
+### -> in case of binding_sites_on_genes[120], you find 5 overlaps with annotated genes 
+### -> subsetByOverlaps(annotation_genes, makeGRangesFromDataFrame(binding_sites_on_genes)[120])
+### -> the binding site gets assigned to the gene with ID ENSG00000226396.1, but this is not the longest, but rather the shortest (please check ?)
+###
 
 #overlaps of crosslinks with genes
 ol <- findOverlaps(annotation_genes, binding_sites)
@@ -108,6 +173,12 @@ bound_genes <- annotation_genes[substr(annotation_genes$gene_id,1,15) %in% subst
   filter( gene_type != "TEC" & !grepl(pattern = "pseudo", gene_type)  )# remove uninteresting types
 
 
+### TODO MB
+### plot works fine, but some suggestions here
+### 1) use round(x, digits = 2) function for percentage labels
+### 2) Sort by frequency
+### 3) transform in log2 space
+
 ggplot(bound_genes, aes(x = gene_type))+
   geom_bar(fill = "blue")+
   stat_count(aes(label=paste0(sprintf("%1.11f", ..count../sum(..count..)*100),
@@ -116,7 +187,6 @@ ggplot(bound_genes, aes(x = gene_type))+
   coord_flip()+
   theme_paper()
 
-
 ```
 
 
@@ -124,6 +194,10 @@ ggplot(bound_genes, aes(x = gene_type))+
 # Bound gene regions of protein coding genes
 
 ```{r}
+### TODO MB
+### does work as expected
+###
+
 # classify only protein coding genes, regions only from bound genes
 anno_regions <- annotation[annotation$type %in% c("three_prime_UTR", "five_prime_UTR", "CDS") ]
 anno_regions <- anno_regions[anno_regions$gene_id %in% binding_sites_on_genes$gene_id]
@@ -324,6 +398,13 @@ ggplot(norm_regions, aes(x=type, y = norm_binding_per_reg_size))+
 
 # Strongest binding site per gene
 ```{r}
+### TODO MB
+### here the pureclip score is used to define the strongest binding site per gene
+### this is then scaled by the number of nts covered by binding site on that gene
+### -> I don't really get why
+### -> It's not shown in plot or in description
+### 
+
 strongest_BS <- bs_3 %>% group_by(gene_id) %>%
   arrange(desc(score)) %>%
   dplyr::slice(1) %>%
@@ -345,7 +426,9 @@ ggplot(strongest_BS, aes(x=type, y = norm_binding_per_reg_size))+
 # Distribution of crosslinks on gene regions
 
 ```{r eval=FALSE, include=FALSE}
-
+### TODO MB
+### Code takes very long to execute
+### -> Stopped execution after ~2min
 anno_regions_all <- annotation[annotation$type %in% c("three_prime_UTR", "five_prime_UTR", "CDS") ]
 #anno_regions_all <- anno_regions_all[anno_regions_all$gene_id %in% binding_sites_on_genes$gene_id]
 anno_regions_all <- anno_regions_all[anno_regions_all$gene_type == "protein_coding"]
@@ -426,7 +509,10 @@ profile$Plot + ylim(c(0,0.9)) + theme_paper() + theme(legend.position = NULL)
 # Binding vs tpm
 
 ```{r}
-#
+### TODO MB
+### tpm cutoffs are not known
+### 
+
 s <- list(0,1,10,100,1000)
 
 RNA_tpm_cutoffs <- map(s, ~rnaseq_counts %>% filter(mean_tpm_rnaseq > .x))
@@ -551,6 +637,9 @@ From revision:
 
 n_BS_per_gene_tpm <- left_join(n_BS_per_gene, rnaseq_counts, by = "gene_id" )
 
+### TODO MB
+### this should probably be viewed on log2 scale
+###
 
 ggplot(n_BS_per_gene_tpm, aes(x=mean_tpm_rnaseq, y = n_BS))+
   geom_point()+
@@ -651,6 +740,11 @@ ggplot(neuro_dendritic_cc[neuro_dendritic_cc$fdr < 0.05,], aes(y = generatio, x 
 - binding sites with additional infos (binding_sites_characterized.rds)
 
 ```{r eval=FALSE, include=FALSE}
+
+### TODO MB
+### final object contains a lot of NAs
+### in some columns it's expected, in others not
+### eg. the gene_id field seems to be duplicated (gene_id.1), but it's not always filled? 
 
 saveRDS(binding_sites_with_regions,  "/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/binding_sites_characterized.rds")
 
