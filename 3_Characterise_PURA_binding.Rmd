@@ -49,7 +49,6 @@ source("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/XX-helpful
 
 ```{r input}
 
-
 # Clip data
 binding_sites <-  readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/binding_sites.rds")  
 CL_list <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/bw_merges.rds")
@@ -63,79 +62,59 @@ rnaseq_counts <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molit
 # annotations
 gff3 <- "/Users/melinaklostermann/Documents/projects/anno/GENCODEv31-p12/gencode.v31.annotation.gff3" # for cliProfiler
 annotation <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/annotation.rds")
+anno_txdb <- loadDb("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/annotation_txdb.db")
 
-anno_txdb <- makeTxDbFromGRanges(annotation)
 
 ```
 
 
 # Bound Genes
 
-## clean annotation
-- exclude pseudogenes
-- throw out identical annotations
-
-
-
-```{r}
-## TODO move to 0 annotation filter
-
-annotation <- keepStandardChromosomes(annotation, pruning.mode = "coarse")
-annotation <- annotation[!grepl(annotation$gene_type, pattern = "pseudo") & !(annotation$gene_type %in% c("TEC", "Mt_tRNA", "Mt_rRNA"))]
-
-
-annotation <- as.data.frame(annotation) %>%
-unique.data.frame() %>%
-makeGRangesFromDataFrame(keep.extra.columns = T)
-
-```
-
-## Bound Gene types 
 - many binding sites overlap with multiple genes (non codings!)
 - in IGV it look like rather the non-coding RNA than the protein-coding RNA is bound in that case
 - we therefore use a hieracry on gene types: lncRNA > miRNA > miscRNA > snRNA > snoRNA > protein-coding
 
 ```{r}
-# anntotion of only genes, overlaps are resolved by keeping the longer gene
+############################
+# annote binding sites with the bound ( = overlapping) gene
+################################
+#  overlaps are resolved by:
+# 1. for two genes of different type by the type hieracy
+# 2. for to protein coding genes: in this chunk one protein coding gene is assigned at random in the next chunk the region hieracry is used to make this decision and the gene info is changed then
+
 annotation_genes <- annotation[annotation$type=="gene"] 
 
-#overlaps of crosslinks with genes
+#overlaps of bs with genes
 ol <- findOverlaps(annotation_genes, binding_sites, ignore.strand=F)
-bs <- binding_sites
-bs$idx <- 1:NROW(bs)
+binding_sites[-subjectHits(findOverlaps(annotation_genes, binding_sites, ignore.strand=F))]
 
-# get all possible regions overlapping with crosslinked nucleotide
-bs_2 <- bs[subjectHits(ol)]
-elementMetadata(bs_2) <-  c(elementMetadata(bs_2), elementMetadata(annotation_genes[queryHits(ol), c("gene_id", "gene_type", "gene_name")]))
 
-table(bs_2$gene_type)
+# index binding sites
+binding_sites$idx <-  1:NROW(binding_sites)
+
+# get all possible regions overlapping with crosslinked nucleotide in a temporary file
+binding_sites_temp1 <- binding_sites[subjectHits(ol)]
+binding_sites_temp1 <- sortSeqlevels(binding_sites_temp1)
+elementMetadata(binding_sites_temp1) <-  c(elementMetadata(binding_sites_temp1), elementMetadata(annotation_genes[queryHits(ol), c("gene_id", "gene_type", "gene_name")]))
+
+table(binding_sites_temp1$gene_type)
 
 # chose for each binding site a gene from the highest possible hierarchy
-# if to genes from the same type would be present the first one is chosen
-bs_3 <- bs_2 %>%  as.data.frame(.) %>%
-  group_by(idx) %>%
-  arrange(factor(gene_type, levels = c("lncRNA", "miRNA", "miscRNA", "snRNA", "snoRNA", "protein_coding" )), .by_group = T) %>% 
-  dplyr::slice(1) 
+# if two genes from the same type would be present the first one is chosen (randomly)
+binding_sites_temp2 <- binding_sites_temp1 %>%  
+  as.data.frame(.) %>% # this file contains several entries for 1 binding site overlapping with more than one gene
+  group_by(idx) %>% # the idx colum is an index of the binding sites
+  arrange(factor(gene_type, levels = c("lncRNA", "miRNA", "miscRNA", "snRNA", "snoRNA", "protein_coding" )), .by_group = T) %>% # arrange by hierarcy
+  dplyr::slice(1) # choose randomly  the first gene (the chosen gene is changed in the next chunk for protein coding genes)
 
-binding_sites <- makeGRangesFromDataFrame(bs_3, keep.extra.columns = T)
-bound_genes <- bs_3[!duplicated(bs_3$gene_id),]
+binding_sites_temp2 <- makeGRangesFromDataFrame(binding_sites_temp2, keep.extra.columns = T)
 
-# plot for numbers
-ggplot(bound_genes, aes(x = gene_type))+
-  geom_bar(fill = "blue")+
-  stat_count(aes(label=paste0(sprintf("%1.11f", ..count../sum(..count..)*100),
-                              "% \n", ..count..), y=0.5*max(..count..)),
-             geom="text", colour="black", size=4, position=position_dodge(width=1)) +
-  coord_flip()+
-  theme_paper()
+table(binding_sites_temp2$gene_type)
 
-# plot for paper
-ggplot(bound_genes, aes(x = gene_type))+
-  geom_bar(fill = "darkgrey")+
-  scale_y_log10()+
-  coord_flip()+
-  theme_paper()
+# non coding rnas "fake" region non coding
+bs_temp_non_cod <- binding_sites_temp2[binding_sites_temp2$gene_type!= "protein_coding",] %>% makeGRangesFromDataFrame(., keep.extra.columns = T)
 
+bs_temp_non_cod$type <- "non_coding"
 
 ```
 
@@ -158,32 +137,76 @@ introns$type = "intron"
 anno_regions <- c(anno_regions, introns)
 
 #overlaps of binding sites with protein coding genes
-bs_pc <- binding_sites[binding_sites$gene_type=="protein_coding"]
-ol_bs <- findOverlaps(anno_regions, bs_pc-2, ignore.strand = FALSE)
+binding_sites_temp_pc <- binding_sites_temp2[binding_sites_temp2$gene_type=="protein_coding"]
 
-bs_pc$idx <- 1:NROW(bs_pc)
 
-# get all possible regions overlapping with crosslinked nucleotide
-bs_2 <- bs_pc[subjectHits(ol_bs)]
-anno_bs <- elementMetadata(anno_regions[queryHits(ol_bs)]) %>% as.data.frame()
-colnames(anno_bs) <- paste0(colnames(anno_bs), ".from_region")
-elementMetadata(bs_2) <- c(elementMetadata(bs_pc[subjectHits(ol_bs)]), anno_bs)
+ol_bs <- findOverlaps(anno_regions, binding_sites_temp_pc-2, ignore.strand = FALSE)
+
+
+# get all possible regions overlapping with bs
+binding_sites_temp_pc2 <- binding_sites_temp_pc[subjectHits(ol_bs)]
+binding_sites_temp_pc2 <- sortSeqlevels(binding_sites_temp_pc2)
+
+# get possible region and transcript annotation of bs
+anno_bs <- elementMetadata(anno_regions[queryHits(ol_bs)]) %>%
+  as.data.frame(.) %>%
+  dplyr::select(c("type", "gene_id", "transcript_id"))
+
+# and add to temp binding sites
+colnames(anno_bs) <- c("type", "gene_id.from_region", "transcript_id.from_region")
+elementMetadata(binding_sites_temp_pc2) <- c(elementMetadata(binding_sites_temp_pc[subjectHits(ol_bs)]), anno_bs)
 
 
 # choose type highest in hiearcy
-bs_3 <- as.data.frame(bs_2) %>%
-  filter(., gene_id == gene_id.from_region) %>% # this throws out regions that overlap with non-coding RNAs, with this line no binding sites in introns!!!
-  group_by(idx) %>%
-  arrange(factor(type.from_region, levels = c("three_prime_UTR", "five_prime_UTR", "CDS", "intron")), .by_group = T) %>%
-  dplyr::slice(1) # arrange by non-coding type
+binding_sites_temp_pc3 <- as.data.frame(binding_sites_temp_pc2) %>%
+    mutate(., gene_id = gene_id.from_region ) %>% # this throws out regions that overlap with non-coding RNAs, with this line no binding sites in introns!!!
+  group_by(idx) %>% # specific id per binding site
+  arrange(factor(type, levels = c("three_prime_UTR", "five_prime_UTR", "CDS", "intron")), .by_group = T) %>%
+  dplyr::slice(1) # arrange by region, select first, transcript info is ignored here
+
+binding_sites_temp_pc3 <- makeGRangesFromDataFrame(binding_sites_temp_pc3, keep.extra.columns = T)
+sortSeqlevels(binding_sites_temp_pc3)
+
+# merge BS from non-coding RNAs and binding sites with specific regions
+binding_sites_with_regions <- c(binding_sites_temp_pc3, bs_temp_non_cod)
+
+table(binding_sites_with_regions$type)
+
+# why do some many protein coding genes not have a region? (~3500) --> all with region when annotation is not filtered
+# 
+bs_without_region <- binding_sites[-queryHits(findOverlaps(binding_sites, binding_sites_with_regions))]
+
+anno_regions[queryHits(findOverlaps(anno_regions, bs_without_region , ignore.strand = FALSE))]$gene_type
 
 
-bs3 <- makeGRangesFromDataFrame(bs_3, keep.extra.columns = T)
-bs_without_region <- binding_sites[-queryHits(findOverlaps(binding_sites, bs3))]
-bs_without_region$type.from_region <- "no_region"
+table(bs_without_region$region)
 
-# plot for paper
-ggplot(bs_3, aes(x = type.from_region ))+
+#binding_sites <- c(binding_sites_with_region , bs_without_region )
+
+```
+
+```{r}
+###################
+# make plots
+##################
+	
+# gene types
+
+bound_genes_gg <- as.data.frame(binding_sites_with_regions) %>%
+  filter(!duplicated(gene_id))
+
+ggplot(bound_genes_gg, aes(x = gene_type))+
+  geom_bar(fill = "darkgrey")+
+  scale_y_log10()+
+  coord_flip()+
+  theme_paper()
+
+
+# gene regions
+
+binding_sites_gg <- as.data.frame(binding_sites_with_regions)
+
+ggplot(binding_sites_gg, aes(x = type))+
   geom_bar()+
   stat_count(aes(label=paste0(
     sprintf("%1.1f", ..count../sum(..count..)*100),
@@ -191,22 +214,21 @@ ggplot(bs_3, aes(x = type.from_region ))+
              geom="text", colour="white", size=4, position=position_dodge(width=1)) +
   theme_paper()+
   ylab("Number of crosslink events")
+
+
+
 ```
 
 
 ```{r}
-# add protein_coding Bs with region to non-coding BS without region
-binding_sites_with_regions <- c(makeGRangesFromDataFrame(bs_3, keep.extra.columns = T) ,
-                                bs_without_region) %>% 
-  as.data.frame(.)
 
 # final numbers
 table(binding_sites_with_regions$type.from_region)
 table(binding_sites_with_regions[!duplicated(binding_sites_with_regions$gene_id),]$gene_type)
 
 # clean up unnecessary columns
-binding_sites_with_regions <- binding_sites_with_regions[,c(1:15, 17)]
-colnames(binding_sites_with_regions) <- c(colnames(binding_sites_with_regions)[1:15], "region")
+colnames(elementMetadata(binding_sites_with_regions)) <- c(colnames(elementMetadata(binding_sites_with_regions))[1:10], "region", "", "transcript_id")
+elementMetadata(binding_sites_with_regions) <- elementMetadata(binding_sites_with_regions)[c(1:11,13)]
 
 ```
 
@@ -217,14 +239,19 @@ colnames(binding_sites_with_regions) <- c(colnames(binding_sites_with_regions)[1
 # classify only protein coding genes
 anno_regions_r <- GenomicRanges::reduce(anno_regions)
 
+# annotate the whole annotation to a specific region by hierarcy
+
+# get all 3'utrs
 utr3 <- anno_regions[anno_regions$type=="three_prime_UTR"] %>%
   GenomicRanges::reduce()
+# remove 3'utr regions from genome coordiantes left to assign
 anno_left <- GenomicRanges::setdiff(anno_regions_r, utr3, ignore.strand=FALSE)
 
-
+# get 5'UTRs from genome coordiantes left to assign
 utr5 <- GenomicRanges::intersect(anno_left,
                                  anno_regions[anno_regions$type=="five_prime_UTR"] ) %>%
   GenomicRanges::reduce()
+# remove 5'utr regions from genome coordiantes left to assign
 anno_left <- GenomicRanges::setdiff(anno_left, utr5, ignore.strand=FALSE)
 
 
@@ -239,18 +266,20 @@ intron <- GenomicRanges::intersect(anno_left,
   GenomicRanges::reduce()
 anno_left <- GenomicRanges::setdiff(anno_left, intron, ignore.strand=FALSE)
 
-
+# get lenght of regions for as norm factor
 norm_df <- data.frame(region = c("three_prime_UTR", "five_prime_UTR", "CDS", "intron"),
                       width = c(sum(width(utr3)), sum(width(utr5)), sum(width(cds)), sum(width(intron))))
   
-
-norm_regions <- bs_3 %>% group_by(type.from_region) %>% summarize(nts_in_BS = sum(width)) %>% 
-  left_join(norm_df, by = c(type.from_region = "region")) %>%
+# normalise bs in regions by norm factor
+norm_regions <- binding_sites_with_regions %>% as.data.frame(.) %>%
+  group_by(region) %>%
+  summarize(nts_in_BS = sum(width)) %>% 
+  left_join(norm_df, by = "region") %>%
   mutate(norm_binding_per_reg_size = nts_in_BS / width)
 
 
-
-ggplot(norm_regions, aes(x=type.from_region, y = norm_binding_per_reg_size))+
+# plot normed gene regions
+ggplot(norm_regions, aes(x=region, y = norm_binding_per_reg_size))+
   geom_col()+
   theme_paper()
 
@@ -258,7 +287,11 @@ ggplot(norm_regions, aes(x=type.from_region, y = norm_binding_per_reg_size))+
 
 ## Strongest binding site per gene
 ```{r eval=FALSE, include=FALSE}
+# check strongest binding site per gene, to see if distribution between regions shifts
+# --> the strongest BS per gene is more often in the 3'UTR
+
 strongest_BS <- binding_sites_with_regions %>%
+  as.data.frame(.) %>%
   group_by(gene_id) %>%
   arrange(desc(score)) %>%
   dplyr::slice(1) %>%
@@ -421,18 +454,25 @@ ggplot(binding_sites_with_regions, aes(x = log10(mean_tpm_rnaseq), log10(mean.cl
 # Dependency of binding to tpm
 
 ```{r}
-#
+##############################
+# bin binding sites over a certian RNAseq tpm cutoff
+#############################
+
+# cutoffs
 s <- list(0,1,10,100,1000)
 
+# make list with bs about cutoffs
 RNA_tpm_cutoffs <- map(s, ~rnaseq_counts %>% filter(mean_tpm_rnaseq > .x))
 
+# summarise number of bs over each cutoff in one data frame
 RNA_tpm_cutoffs_bound <- map2_dfr(RNA_tpm_cutoffs, s, ~c(bound = nrow(.x[.x$gene_id %in% substr(binding_sites_with_regions$gene_id,1,15),]),
                                                   all_over_tpm_cut =   nrow(.x),
                                                   tpm_cut = .y))
 
-
+# calculate ration of bound vs unbound for bindingsites over each cutoff
 RNA_tpm_cutoffs_bound <- mutate(RNA_tpm_cutoffs_bound, ratio_bound = bound / all_over_tpm_cut)
 
+# plot
 ggplot(RNA_tpm_cutoffs_bound, aes(x = as.factor(tpm_cut), y = ratio_bound, label = all_over_tpm_cut))+
   geom_col(position = "identity")+
   geom_text(aes(label=paste(round(ratio_bound,2), "% \n of", all_over_tpm_cut)), 
