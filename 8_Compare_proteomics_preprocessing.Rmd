@@ -108,6 +108,8 @@ proteomics_tables <- list( thermo_fisher = readxl::read_excel("/Users/melinaklos
 
 p_cut_prot <- 0.05
 
+
+
 ```
 
 
@@ -129,6 +131,8 @@ Found proteins, that are not matched to any gene:
 
 ```{r}
 map(proteomics_tables, ~sum(is.na(.x$gene_name)))
+
+grep(proteomics_tables[[1]]$gene_name, pattern = ";", value =T)
 
 ```
 
@@ -160,6 +164,7 @@ proteomics_tables <- lapply(proteomics_tables, function(x){
 ## Overlap of found genes, that the proteins belong to
 
 ```{r}
+
 
 ### TODO MK
 ### You removed all NAs in the chunk above. So you can remove the na.omit()
@@ -219,11 +224,15 @@ LFQs <- lapply(LFQs, function(x){
 
 LFQs_t <- map(LFQs, ~reshape2::melt(.x))
 
+<<<<<<< HEAD
+LFQs_t2 <- s(LFQs_t[[1]], LFQs_t[[2]], by = c("gene_name", "variable"), suffix = c(".tf", ".mq_ma"))
+=======
 ### TODO MK
 ### You could rename the columns of LFQs_t2 as value.tf, value.mq_ma and especially
 ### value are not very informative
 
 LFQs_t2 <- full_join(LFQs_t[[1]], LFQs_t[[2]], by = c("gene_name", "variable"), suffix = c(".tf", ".mq_ma"))
+>>>>>>> 52ec10d886ad90aff7dbb6317e50cce389536bfe
 LFQs_t2 <- full_join(LFQs_t2, LFQs_t[[3]], by = c("gene_name", "variable"), suffix = c("", ".mq_noma"))
 
 LFQs_t3 <- reshape2::melt(LFQs_t2)
