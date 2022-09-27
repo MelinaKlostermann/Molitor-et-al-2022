@@ -178,7 +178,7 @@ multiple_protein_ids  <- multiple_protein_ids  %>% rowwise(.) %>%
 multiple_protein_ids <- multiple_protein_ids %>% 
   rowwise() %>%
   mutate(synonymous_names = case_when(
-  ID1 %in% c(gene_name, external_synonym) &
+  ID1 %in% c(gene_name, external_synonym) |
     ID2 %in% c(gene_name, external_synonym) ~ T,
   T~ F
     
