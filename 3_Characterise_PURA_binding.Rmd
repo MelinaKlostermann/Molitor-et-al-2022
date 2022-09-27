@@ -82,7 +82,7 @@ anno_txdb <- loadDb("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et
 # 1. for two genes of different type by the type hieracy
 # 2. for to protein coding genes: in this chunk one protein coding gene is assigned at random in the next chunk the region hieracry is used to make this decision and the gene info is changed then
 
-annotation_genes <- annotation[annotation$type=="gene"] 
+annotation_genes <- annotation[annotation$type=="gene"] # use transcripts instead
 
 #overlaps of bs with genes
 ol <- findOverlaps(annotation_genes, binding_sites, ignore.strand=F)
@@ -273,9 +273,9 @@ norm_df <- data.frame(region = c("three_prime_UTR", "five_prime_UTR", "CDS", "in
 # normalise bs in regions by norm factor
 norm_regions <- binding_sites_with_regions %>% as.data.frame(.) %>%
   group_by(region) %>%
-  summarize(nts_in_BS = sum(width)) %>% 
+  summarize(nts_in_BS = sum(width-2)) %>% 
   left_join(norm_df, by = "region") %>%
-  mutate(norm_binding_per_reg_size = nts_in_BS / width)
+  mutate(norm_binding_per_reg_size = nts_in_BS / width) # mal 1000 per kb
 
 
 # plot normed gene regions
@@ -455,7 +455,7 @@ ggplot(binding_sites_with_regions, aes(x = log10(mean_tpm_rnaseq), log10(mean.cl
 
 ```{r}
 ##############################
-# bin binding sites over a certian RNAseq tpm cutoff
+# bin binding sites over a certan RNAseq tpm cutoff
 #############################
 
 # cutoffs
