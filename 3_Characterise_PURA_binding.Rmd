@@ -41,7 +41,7 @@ library(hypeR)
 report_color <- (pals::ocean.solar(15))
 
 source("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/XX-helpful-chunks/theme_paper.R")
-
+outpath <- "/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/"
 ``` 
 
 
@@ -52,7 +52,7 @@ source("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/XX-helpful
 # Clip data
 binding_sites <-  readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/binding_sites.rds")  
 CL_list <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/bw_merges.rds")
-#w_path_list <- readRDS(paste0("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/02-Comp-iCLIPs/XX-Combined_experiments/bw_path_list_PURA_all_iCLIPs.rds"))
+
 
 
 # RNAseq
@@ -68,8 +68,9 @@ anno_txdb <- loadDb("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et
 ```
 
 
-# Bound Genes
+# Bound Genes and regions
 
+## assign bound gene type 
 - many binding sites overlap with multiple genes (non codings!)
 - in IGV it look like rather the non-coding RNA than the protein-coding RNA is bound in that case
 - we therefore use a hieracry on gene types: lncRNA > miRNA > miscRNA > snRNA > snoRNA > protein-coding
@@ -82,12 +83,10 @@ anno_txdb <- loadDb("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et
 # 1. for two genes of different type by the type hieracy
 # 2. for to protein coding genes: in this chunk one protein coding gene is assigned at random in the next chunk the region hieracry is used to make this decision and the gene info is changed then
 
-annotation_genes <- annotation[annotation$type=="gene"] # use transcripts instead
+annotation_gene <- annotation[annotation$type=="gene"]
 
-#overlaps of bs with genes
-ol <- findOverlaps(annotation_genes, binding_sites, ignore.strand=F)
-binding_sites[-subjectHits(findOverlaps(annotation_genes, binding_sites, ignore.strand=F))]
-
+# overlaps of bs with any gene
+ol <- findOverlaps(annotation_gene, binding_sites, ignore.strand=F)
 
 # index binding sites
 binding_sites$idx <-  1:NROW(binding_sites)
@@ -95,7 +94,7 @@ binding_sites$idx <-  1:NROW(binding_sites)
 # get all possible regions overlapping with crosslinked nucleotide in a temporary file
 binding_sites_temp1 <- binding_sites[subjectHits(ol)]
 binding_sites_temp1 <- sortSeqlevels(binding_sites_temp1)
-elementMetadata(binding_sites_temp1) <-  c(elementMetadata(binding_sites_temp1), elementMetadata(annotation_genes[queryHits(ol), c("gene_id", "gene_type", "gene_name")]))
+elementMetadata(binding_sites_temp1) <-  c(elementMetadata(binding_sites_temp1), elementMetadata(annotation_gene[queryHits(ol), c("gene_id", "gene_type", "gene_name")]))
 
 table(binding_sites_temp1$gene_type)
 
@@ -118,7 +117,7 @@ bs_temp_non_cod$type <- "non_coding"
 
 ```
 
-# Binding site region by hiercary approach
+## Binding site region by hiercary approach
 
 - Overlap Bs with mutiple regions and choose one with highest priority
 - hieracry: "three_prime_UTR" > "five_prime_UTR" > "CDS" > "intron" 
@@ -150,10 +149,10 @@ binding_sites_temp_pc2 <- sortSeqlevels(binding_sites_temp_pc2)
 # get possible region and transcript annotation of bs
 anno_bs <- elementMetadata(anno_regions[queryHits(ol_bs)]) %>%
   as.data.frame(.) %>%
-  dplyr::select(c("type", "gene_id", "transcript_id"))
+  dplyr::select(c("type", "gene_id"))
 
 # and add to temp binding sites
-colnames(anno_bs) <- c("type", "gene_id.from_region", "transcript_id.from_region")
+colnames(anno_bs) <- c("type", "gene_id.from_region")
 elementMetadata(binding_sites_temp_pc2) <- c(elementMetadata(binding_sites_temp_pc[subjectHits(ol_bs)]), anno_bs)
 
 
@@ -170,20 +169,13 @@ sortSeqlevels(binding_sites_temp_pc3)
 # merge BS from non-coding RNAs and binding sites with specific regions
 binding_sites_with_regions <- c(binding_sites_temp_pc3, bs_temp_non_cod)
 
-table(binding_sites_with_regions$type)
 
-# why do some many protein coding genes not have a region? (~3500) --> all with region when annotation is not filtered
-# 
+# some protein coding genes not have a region, because no trustworth transcript is annotated in this position of the gene
 bs_without_region <- binding_sites[-queryHits(findOverlaps(binding_sites, binding_sites_with_regions))]
 
-anno_regions[queryHits(findOverlaps(anno_regions, bs_without_region , ignore.strand = FALSE))]$gene_type
-
-
-table(bs_without_region$region)
-
-#binding_sites <- c(binding_sites_with_region , bs_without_region )
 
 ```
+## Plot total number of gene type
 
 ```{r}
 ###################
@@ -221,14 +213,13 @@ ggplot(binding_sites_gg, aes(x = type))+
 
 
 ```{r}
-
 # final numbers
-table(binding_sites_with_regions$type.from_region)
+table(binding_sites_with_regions$region)
 table(binding_sites_with_regions[!duplicated(binding_sites_with_regions$gene_id),]$gene_type)
 
 # clean up unnecessary columns
-colnames(elementMetadata(binding_sites_with_regions)) <- c(colnames(elementMetadata(binding_sites_with_regions))[1:10], "region", "", "transcript_id")
-elementMetadata(binding_sites_with_regions) <- elementMetadata(binding_sites_with_regions)[c(1:11,13)]
+colnames(elementMetadata(binding_sites_with_regions)) <- c(colnames(elementMetadata(binding_sites_with_regions))[1:10], "region", "")
+elementMetadata(binding_sites_with_regions) <- elementMetadata(binding_sites_with_regions)[c(1:11)]
 
 ```
 
@@ -565,7 +556,7 @@ ggplot(n_BS_per_gene_tpm, aes(x=as.factor(bin), y = n_BS))+
 
 ```{r eval=FALSE, include=FALSE}
 # background: all genes with crosslinks
-expr_genes <- subsetByOverlaps(annotation_genes, c(CL_list[[1]],CL_list[[2]]))
+expr_genes <- subsetByOverlaps(annotation_gene, c(CL_list[[1]],CL_list[[2]]))
 
 # msigdb_available(species = "Homo sapiens")
 reactome_geneset <- msigdb_gsets("Homo sapiens", "C2", "CP:REACTOME")
@@ -576,8 +567,8 @@ cell_comp_geneset <- msigdb_gsets("Homo sapiens", "C5", "CC")
 bg <- unique(expr_genes$gene_name)
 
 # Test USS groups vs gene sets
-hyps_reactome <-  hypeR(bound_genes$gene_name, reactome_geneset, test="hypergeometric", fdr=1, pval = 1, background = bg )
-hyps_cell_comp <- hypeR(bound_genes$gene_name, cell_comp_geneset, test="hypergeometric", fdr=1, pval = 1, background = bg) 
+hyps_reactome <-  hypeR(bound_genes_gg$gene_name, reactome_geneset, test="hypergeometric", fdr=1, pval = 1, background = bg )
+hyps_cell_comp <- hypeR(bound_genes_gg$gene_name, cell_comp_geneset, test="hypergeometric", fdr=1, pval = 1, background = bg) 
 
 
 
@@ -590,8 +581,8 @@ ggplot(reactome_df[1:25,], aes(y = generatio, x = factor(label, level = rev(uniq
   theme_paper()+
   scale_size(range = c(1, 3))
 
-# xlsx::write.xlsx(reactome_df, paste0(outpath, "iCLIP_reactome_list.xlsx"))
-# ggsave(paste0(outpath, Sys.Date(), "reactome_iCLIP_paper.pdf"), width = 17, height = 8, units = "cm")
+xlsx::write.xlsx(reactome_df, paste0(outpath, "iCLIP_reactome_list.xlsx"))
+ggsave(paste0(outpath, Sys.Date(), "reactome_iCLIP_paper.pdf"), width = 17, height = 8, units = "cm")
 
 
 # plot cellular components 
@@ -603,8 +594,8 @@ ggplot(cc_df[1:25,], aes(y = generatio, x = factor(label, level = rev(unique(lab
   theme_paper()+
   scale_size(range = c(1, 3))
 
-#xlsx::write.xlsx(cc_df, paste0(outpath, "iCLIP_GO_cc_list.xlsx"))
-#ggsave(paste0(outpath, Sys.Date(), "cc_iCLIP_paper.pdf"), width = 17, height = 8, units = "cm")
+xlsx::write.xlsx(cc_df, paste0(outpath, "iCLIP_GO_cc_list.xlsx"))
+ggsave(paste0(outpath, Sys.Date(), "cc_iCLIP_paper.pdf"), width = 17, height = 8, units = "cm")
 
 
 # cellular components connected to neurons
@@ -620,7 +611,7 @@ ggplot(neuro_dendritic_cc[neuro_dendritic_cc$fdr < 0.05,], aes(y = generatio, x 
   theme_paper()+
   scale_size(range = c(1, 3))
 
-#ggsave(paste0(outpath, Sys.Date(), "cc_dndritic_iCLIP_paper.pdf"), width = 17, height = 8, units = "cm")
+ggsave(paste0(outpath, Sys.Date(), "cc_dndritic_iCLIP_paper.pdf"), width = 17, height = 8, units = "cm")
 
 
 ```
@@ -633,8 +624,5 @@ ggplot(neuro_dendritic_cc[neuro_dendritic_cc$fdr < 0.05,], aes(y = generatio, x 
 
 saveRDS(binding_sites_with_regions,  "/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/binding_sites_characterized.rds")
 
-## TODO this file changed now, rerun all following skripts with new file
-
 ```
-
 

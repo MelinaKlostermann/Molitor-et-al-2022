@@ -40,51 +40,6 @@ report_color <- (pals::ocean.solar(15))
 source("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/XX-helpful-chunks/theme_paper.R")
 ```
 
-```{r}
-################################################################################
-###                       CODE REVIEW SUMMARY                                ###
-################################################################################
-### 
-### Review by:          Mirko Brüggemann
-### Comment shortcut:   MB
-### Date:               10.08.2022
-### Time spent:         ~3h
-
-# Main objective: 
-# Define binding sites from PureCLIP crosslink positions
-# 
-# Input:
-# - PureCLIP sites as .bed
-# - iCLIP signal as .bw for each replicate (1-4)
-# - iCLIP signal as .bw as a merge of all replicates 
-# - gene annotation as of gencode v31 as GFF3
-# 
-# Minor tasks the script performs are: 
-# - Filtering of gene annotation
-# 
-# Major/ issues:
-# - No major issues or bugs. The script works as it is and produces correct results.
-#   It is well structured and code logic can be followed easily 
-#
-# Minor/ suggestions:
-# - The script deals with the gencode annotation filtering with is never used and 
-# unnecessary (-> could be moved to its own script)
-# - .bw files are imported several times over again in different formats (RLE and
-#   GRanges). 
-# - The GRanges imports are never used, so they could be removed
-# - The RLE imports happen on various levels (at the begining of the script,
-#   within functions, at the end of the script).
-# - The same iCLIP signal is also imported twice, as merge and as replicates
-# - Binding site post-processing and filtering assumes a width of 5nt which is 
-#   hard coded several times, which makes testing error prone
-# - Binding site post-processing and filtering has small logical inconsitencies
-#   in the way filtering steps act upon each other
-#
-#
-# Nice job! 
-# Feel free to review the review :) 
-#
-```
 
 
 # Input
@@ -154,38 +109,6 @@ wbs <- 5
 
 ```{r}
 
-
-### TODO MB
-### 1)
-### The split_bw_crosslinks_to_1_nt function splits the GRanges from the bigwigs into 1nt chunks, since they are not per default
-### an other way would be to import the bigwigs as RLE and then turn the RLE into a GRanges instead.
-### NOTE GRanges(sample1.plus.rle) does not split it up into 1nt size, how do you mean?
-
-### 2)
-### bw_all_samples and bw_merges are constructed but never used in the script. They are just exported at the end.
-### If they are used by some other script, why not constructing the objects there?
-### NOTE I use them in several chases later, an only want to do this step once in the beginning, moved also to script 0 now
-### Also both are unnamed list which can only be accessed by using [], maybe turn them into named lists instead
-### eg bw_merges$bw_all_plus would be a nicer way
-### NOTE MK yes you are right, but I do not want to change it in all scripts now
-
-
-
-########################################
-# Load and filter Gencode annotation
-#######################################
-
-### TODO MB
-### could be sourced out to a seperate script to improve reproducibility since
-### all analysis for the entire project should be based on the same annotation.
-### You clould have one script that filters the annoation and stores it. All 
-### other scripts could then just load the filtered annotation as TxDB or GRanges.
-### Also the filtered annotation is never used in this script. So there is no need to 
-### import or process it here
-### CHANGED this was the script, were I store it an then always import it afterwards, but I moved it to script 0 now
-
-
-
 ########################
 # Get PureCLIP output
 #########################
@@ -220,15 +143,6 @@ Define_Binding_Sites <- function(pureclip, bw_plus, bw_minus, windowsize, out){
   
   # remove sites with 1 or 2 nt length
   pureclip = pureclip[width(pureclip) > 2]
-  
-  ### TODO MB
-  ### here where you actually use the bigwig signal you re-import it 
-  ### as RLE. It is also maybe not the best idea to have the RLE import hidden 
-  ### in a function. 
-  ### It is a bit confusing that your script imports the same information in 4
-  ### different formats at various times in the script (GRanges, RLE + Replicate, Merge)
-  ### 
-  
   
   
   bw_plus = import.bw(bw_plus, as="Rle")
@@ -328,18 +242,12 @@ binding_sites <- Define_Binding_Sites(pureclip = pureclip_sites,
 ############################
 
 # get centers
-### TODO MB
-### be aware that this is hard coded for a binding site width of 5
-### CHANGED MK
-
-# add score from center PureCLIP sites as binding site score
-
 BS_centers <- binding_sites - ((wbs-1)/2)
 
-	
 # keep only overlaps with PureCLIP sites
 pureclip_sites <- makeGRangesFromDataFrame(pureclip_sites,  keep.extra.columns = TRUE)
 
+# add score from center PureCLIP sites as binding site score
 binding_sites_center_PS <- binding_sites[queryHits(findOverlaps(
  BS_centers, pureclip_sites))]
 
@@ -350,21 +258,11 @@ binding_sites_center_PS$score <- pureclip_sites[subjectHits(findOverlaps(
   BS_centers, pureclip_sites, ignore.strand = F))]$score
 
 
-### TODO MB
-### since you reduced the binding sites to only those that have a PureCLIP site at
-### the center you don't have to check this again at this point
-### this means that the below filter essentially filters for the maximum crosslinks
-### at the center position
-### NOTE do you mean the step befor or afterwards
-
 ###########################
 # Keep only BS with max PureCLIP site at center
 ##########################
 # get bw rles
 
-### TODO MB
-### Another import of merged bigwigs as RLE
-### CHANGED MK
 
 # split BS by strand
 binding_sites_center_PS_plus <- binding_sites_center_PS[strand(binding_sites_center_PS)=="+"]
@@ -378,11 +276,7 @@ binding_sites_center_PS_minus_m <- as.matrix(bw_minus_rle[binding_sites_center_P
 max_BS_plus <- apply(binding_sites_center_PS_plus_m,1,max)
 max_BS_minus <- apply(binding_sites_center_PS_minus_m,1,max)
 
-# subset for center = max
-### TODO MB
-### be aware that this is hard coded for a binding site width of 5
-### a dynamic alternative would be `ceiling(windowsize/2)`
-### CHANGED MK
+
 binding_sites_center_PSmax_plus <- binding_sites_center_PS_plus[
   max_BS_plus == binding_sites_center_PS_plus_m[,((wbs-1)/2)]] 
 binding_sites_center_PSmax_minus <- binding_sites_center_PS_minus[
@@ -396,9 +290,7 @@ binding_sites_center_PSmax_minus <- binding_sites_center_PS_minus[
 binding_sites_center_PSmax_plus_m <- as.matrix(bw_plus_rle[binding_sites_center_PSmax_plus])
 binding_sites_center_PSmax_minus_m <- as.matrix(bw_minus_rle[binding_sites_center_PSmax_minus])
 
-### TODO MB
-### be aware that this is hard coded for a binding site width of 5
-### CHANGED MK
+
 crosslink_sites_plus <- apply(binding_sites_center_PSmax_plus_m, 1, function(x) wbs-sum(x == 0)) 
 crosslink_sites_minus <- apply(binding_sites_center_PSmax_minus_m, 1, function(x)wbs-sum(x == 0)) 
 
@@ -415,13 +307,6 @@ binding_sites_final <- c(binding_sites_center_PSmax_plus_2cl , binding_sites_cen
 # Sample reproducibility
 
 ```{r}
-### TODO MB
-### here where you actually use the replicate bigwig signal you re-import them 
-### as RLE, which makes the GRanges import at the beginning not necessary. Also
-### note that if you label an entire section for importing data one does not
-### expect that there is an additional import of data at the bottom of the script.
-### CHANGED MK
-
 
 # sum up cl events per binding site 
 bs.p = binding_sites_final[strand(binding_sites_final) == "+"]
@@ -445,13 +330,6 @@ binding_sites = c(bs.p, bs.m)
 # Overlap of binding sites between samples
 ###########################################
 
-### TODO MB
-### Here a binding site is considered reproducible by the replicate, if it has a
-### single crosslink event overlapping from that replicate. Maybe be more 
-### stringent here? See the dynamic replicate thresholding of BindingSiteFinder, 
-### because library size varies between replicates
-### NOTE MK
-### did that before at some point we decided to be rather less stringent to fit oe data better, now we do  ot use oe data anymore but I don't want to change all again ...
 
 binding_sites$names <-  1:length(binding_sites)
 UpSet_List_cutoff20 = list(rep1 = binding_sites[binding_sites$clp_rep1> 0]$names,

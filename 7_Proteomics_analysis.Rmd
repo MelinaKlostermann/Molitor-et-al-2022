@@ -28,6 +28,7 @@ library(biomaRt)
 
 
 source("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/XX-helpful-chunks/theme_paper.R")
+outpath <- "/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/"
 
 ```
 
@@ -397,11 +398,7 @@ cell_comp_geneset <- msigdb_gsets("Homo sapiens", "C5", "CC")
 res_sig_kd_list <- list( up = proteomics_deqms %>% filter((sca.adj.pval < p_cut_prot) & (logFC  > 0)) %>% pull(., gene_name),
                   down = proteomics_deqms %>% filter(sca.adj.pval < p_cut_prot & logFC  < 0) %>% pull(., gene_name)
                   )
-       
-### TODO MK
-### These are not all proteins detected by maxquant. These are all proteins 
-### that fulfilled your fallout criterions. nrow(proteomics_deqms) = 4502 and
-### nrow(maxquant_table) = 4946
+      
 
 # background: all proteins detected by maxquant
 bg <- proteomics_deqms$gene_name
@@ -418,23 +415,21 @@ hyps_cell_comp <-  purrr::map(res_sig_kd_list,  ~hypeR(.x, cell_comp_geneset, te
 #########################
 
 # up and down gos in one data frame
-r_down = hyps_reactome[[2]]$data %>% mutate(group = "down", padj = p.adjust(pval, method = "BH"))
-r_up = hyps_reactome[[1]]$data %>% mutate(group = "up",  padj = p.adjust(pval, method = "BH"))
+r_down = hyps_reactome[[2]]$data %>% mutate(group = "down")
+r_up = hyps_reactome[[1]]$data %>% mutate(group = "up")
 
-reactome_go_cust <- rbind(r_down, r_up) %>% arrange(padj) %>% mutate(label = tolower(label), generatio = overlap/geneset)
+reactome_go_cust <- rbind(r_down, r_up) %>% arrange(fdr) %>% mutate(label = tolower(label), generatio = overlap/geneset)
 reactome_go_cust_print <- reactome_go_cust %>% as.data.frame()
 
 # Supplementary Figure
-#xlsx::write.xlsx(reactome_go_cust_print, file =  paste0(outpath, "reactome_proteomics_table.xlsx"))
+xlsx::write.xlsx(reactome_go_cust_print, file =  paste0(outpath, "reactome_proteomics_table.xlsx"))
 
 
 # select by label to retrieve both up and down GO 
 reactome_go_cust <- reactome_go_cust[reactome_go_cust$label %in% reactome_go_cust[1:20,]$label, ]
 
-### TODO MK
-### Why is fdr != padj?
 
-ggplot(reactome_go_cust, aes(y = generatio, x = factor(label, level = rev(unique(label))), fill = padj <0.05))+
+ggplot(reactome_go_cust, aes(y = generatio, x = factor(label, level = rev(unique(label))), fill = fdr <0.05))+
   geom_col()+
   coord_flip()+
   theme_paper()+
@@ -443,24 +438,24 @@ ggplot(reactome_go_cust, aes(y = generatio, x = factor(label, level = rev(unique
   facet_wrap(~group)+
   scale_size(range = c(1, 3))
 
-#ggsave(paste0(outpath, Sys.Date(), "reactome_proteomics_paper.pdf"), width = 17, height = 8, units = "cm")
+ggsave(paste0(outpath, Sys.Date(), "reactome_proteomics_paper.pdf"), width = 17, height = 8, units = "cm")
 
 
 ##########################
 # customise cellular components for paper
 #########################
 
-cc_down = hyps_cell_comp[[2]]$data %>% mutate(group = "down", padj = p.adjust(pval, method = "BH"))
-cc_up = hyps_cell_comp[[1]]$data %>% mutate(group = "up",  padj = p.adjust(pval, method = "BH"))
+cc_down = hyps_cell_comp[[2]]$data %>% mutate(group = "down")
+cc_up = hyps_cell_comp[[1]]$data %>% mutate(group = "up")
 
-cc_go_cust <- rbind(cc_down, cc_up) %>% arrange(padj) %>% mutate(label = tolower(label), generatio = overlap/geneset)
+cc_go_cust <- rbind(cc_down, cc_up) %>% arrange(fdr) %>% mutate(label = tolower(label), generatio = overlap/geneset)
 cc_go_cust_print <- cc_go_cust %>% as.data.frame()
-#xlsx::write.xlsx(cc_go_cust_print, file =  paste0(outpath, "cc_proteomics_table.xlsx"))
+xlsx::write.xlsx(cc_go_cust_print, file =  paste0(outpath, "cc_proteomics_table.xlsx"))
 
 cc_go_cust <- cc_go_cust[cc_go_cust$label %in% cc_go_cust[1:25,]$label, ]
 
 
-ggplot(cc_go_cust, aes(y = generatio, x = factor(label, level = rev(unique(label))), fill = padj <0.01))+
+ggplot(cc_go_cust, aes(y = generatio, x = factor(label, level = rev(unique(label))), fill = fdr <0.01))+
   geom_col()+
   coord_flip()+
   theme_paper()+
@@ -469,7 +464,7 @@ ggplot(cc_go_cust, aes(y = generatio, x = factor(label, level = rev(unique(label
   facet_wrap(~group)+
   scale_size(range = c(1, 3))
 
-#ggsave(paste0(outpath, Sys.Date(), "cc_proteomics_paper.pdf"), width = 17, height = 8, units = "cm")
+ggsave(paste0(outpath, Sys.Date(), "cc_proteomics_paper.pdf"), width = 17, height = 8, units = "cm")
 
 ```
 
@@ -637,7 +632,7 @@ ggplot(prot_vs_RNA_BS_gg, aes(y = -log10(sca.adj.pval.prot), x = logFC.prot))+
   theme(legend.position = "None")+
  theme(strip.text.x = element_blank())
 
-#ggsave(paste0(outpath, "vulcanos_prot_binding.pdf"), height = 8, width = 12, units = "cm")
+ggsave(paste0(outpath, "vulcanos_prot_binding.pdf"), height = 8, width = 12, units = "cm")
   
 # boxplot protein change by binding region
 ggplot(prot_vs_RNA_BS_gg, aes(x = region, y = logFC.prot, fill = region))+
@@ -648,7 +643,7 @@ ggplot(prot_vs_RNA_BS_gg, aes(x = region, y = logFC.prot, fill = region))+
   theme_paper()+
   theme(legend.position = "None")
 
-#ggsave(paste0(outpath, "boxplot_prot_binding_region.pdf"), height = 4, width = 4, units = "cm")
+ggsave(paste0(outpath, "boxplot_prot_binding_region.pdf"), height = 4, width = 4, units = "cm")
 
 
 # boxplot protein change bound vs unbound
@@ -663,7 +658,7 @@ ggplot(prot_vs_RNA_BS_gg, aes(x = bound, y = logFC.prot, fill = bound))+
   theme(legend.position = "None")+
   stat_compare_means(method = "t.test")
 
-#ggsave(paste0(outpath, "boxplot_prot_binding.pdf"), height = 4, width = 4, units = "cm")
+ggsave(paste0(outpath, "boxplot_prot_binding.pdf"), height = 4, width = 4, units = "cm")
 
 
 
@@ -783,9 +778,9 @@ ht_protein <- Heatmap(list_heat_matix[[2]],
 ht_list <- ht_rna + ht_protein
 draw(ht_list)
 
-# pdf(paste0(outpath,"heatmap.pdf"), height = 12, width = 10)
-# draw(ht_list)
-# dev.off
+pdf(paste0(outpath,"heatmap.pdf"), height = 12, width = 10)
+draw(ht_list)
+dev.off
 
 ```
 
