@@ -23,7 +23,7 @@ library(DESeq2)
 library(purrr)
 
 report_color <- (pals::ocean.solar(15))
-source("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/XX-helpful-chunks/theme_paper.R")
+source("~/Desktop/Project/Code review/Molitor-et-al-2022/theme.R")
 ```
 
 # What was done?
@@ -33,10 +33,10 @@ source("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/XX-helpful
 # Input
 ```{r}
 # binding sites
-BS <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/binding_sites_characterized.rds")
+BS <- readRDS("~/Desktop/Data/code review/binding_sites_characterized.rds")
 
 # deseq analysis from PURA knockdown
-res_RNAseq <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/deseq.rds")
+res_RNAseq <- readRDS("~/Desktop/Data/code review/deseq.rds")
 
 ```
 
@@ -56,15 +56,24 @@ strongest_Bs_bound_gene <- BS %>% as.data.frame(.) %>%
   mutate(gene_id = substring(gene_id,1,15))
 
 
-
+################################
+# here the case_when does not work properly, all the rows with NA in log2FoldChange are labeled as TRUE
+# this can be easly checked with res_RNAseq_CLIP[is.na(res_RNAseq_CLIP$log2FoldChange),]
+################################
 
 # mark bound and unbound
 res_RNAseq_CLIP <- mutate(res_RNAseq, gene_id = substr(gene_id, 1, 15),
                           CLIP_bound=case_when(gene_id %in% strongest_Bs_bound_gene$gene_id ~ "bound",
                                                            T ~ "unbound"),
                      changing = case_when(log2FoldChange==0 ~ F,
-                                          log2FoldChange==NA ~ F,
+                                          log2FoldChange==NA ~ F, # change this to is.na(log2FoldChange) ~ F, would work properly
                                           T~T))
+
+################################
+# The rows with the counting information, such as __ambiguous and __no_feature are still in the object res_RNAseq_CLIP
+# I think it is good to remove these rows : )
+
+
 # add matching scores
 res_RNAseq_CLIP <- merge(res_RNAseq_CLIP, strongest_Bs_bound_gene, by = "gene_id", all.x=T)
 
