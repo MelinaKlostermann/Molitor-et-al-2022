@@ -1,0 +1,187 @@
+---
+title: "0 Getting thing ready: filter annotation, import crosslinks"
+author: "Melina"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+output:
+  BiocStyle::html_document:
+    toc_float: TRUE
+    toc: TRUE
+vignette: >
+  %\VignetteIndexEntry{AS USP39 KD}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, results = TRUE)
+```
+
+# What was done?
+
+- The gencode annotation retrieved as gtf file is filtered for standard chromosomes. Transcripts with transcript support level <=3 or NA are only kept if no other transcript of the same gene with a higher levels exists.
+- Crosslinks files are imported as Granges, split into 1nt size and stored 
+
+```{r}
+# libraries
+library(tidyverse)
+library(rtracklayer)
+library(GenomicRanges)
+library(GenomicFeatures)
+
+```
+
+```{r}
+# bigwig files of crosslink events (all 4 samples merged)
+bw_all_plus_path <-
+  "/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_endo/imb_koenig_2020_07_koenig_iCLIP_PURA_endogene/merged/bw/imb_koenig_2020_07_PURAendo.v2uniqMD.duprm.plus.bw"
+bw_all_minus_path <-
+  "/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_endo/imb_koenig_2020_07_koenig_iCLIP_PURA_endogene/merged/bw/imb_koenig_2020_07_PURAendo.v2uniqMD.duprm.minus.bw"
+
+# annotation
+mygft <- "/Users/melinaklostermann/Documents/projects/anno/GENCODEv31-p12/gencode.v31.annotation.gff3"
+
+
+```
+
+# Crosslink files
+
+```{r}
+
+bw_all_plus <- import.bw(bw_all_plus_path)
+bw_all_minus <- import.bw(bw_all_minus_path)
+
+strand(bw_all_plus) <- "+"
+strand(bw_all_minus) <- "-"
+
+################################
+# Split crosslinks to 1-nt events
+################################
+split_bw_crosslinks_to_1_nt <- function(bw){
+  # split ranges in 1 nt events
+  bw_split <- exomeCopy::subdivideGRanges(bw, subsize=1)
+  # match scores by an overlap index
+  idx <- findOverlaps(bw_split, bw)
+  # add scores
+  bw_split$score <- bw[subjectHits(idx)]$score
+  # read strand info
+  strand(bw_split) <- strand(bw)
+  return(bw_split)
+}
+
+
+bw_merges <- list(bw_all_plus, bw_all_minus) %>% lapply(., function(x) split_bw_crosslinks_to_1_nt(bw=x)) %>%
+  lapply(., function(x) keepStandardChromosomes(x, pruning.mode = "coarse"))
+
+saveRDS(bw_merges, paste0("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/", "bw_merges.rds"))
+
+```
+
+# Filter annotation
+
+```{r}
+
+
+filter_gft_anno <- function(gft_anno, standard_chrom, protein_coding, include_GL_3, longest_transcript){
+  library(GenomicRanges)
+  library(dplyr)
+  library(GenomicFeatures)
+
+  # load gft
+  gft <- rtracklayer::import(gft_anno)
+
+  # standard chromosomes
+  if(standard_chrom == T){
+    gft <-keepStandardChromosomes(gft, pruning.mode = "coarse")
+  }
+
+  # protein-coding transcripts
+  if(protein_coding == T){
+    gft <- gft[gft$gene_type=="protein_coding"]
+    gft <- c(gft[gft$type!="gene" & gft$transcript_type=="protein_coding"], gft[gft$type=="gene"])
+  }
+
+  # gene level 1 or 2
+  gft_GL<- gft[gft$level <= 2]
+
+  # gene level 3
+  if(include_GL_3==T){
+    gft_GL3 <- gft[gft$level==3 & !(gft$gene_id %in% gft_GL$gene_id)]
+    gft_GL <- c(gft_GL, gft_GL3)
+  }
+
+  # transcript support level <=3 or NA
+  gft_GL_TL <-gft_GL[!is.na(gft_GL$transcript_support_level) & gft_GL$transcript_support_level <= 3]
+  gft_TL_NA <- gft_GL[is.na(gft_GL$transcript_support_level)]
+  gft_Transcripts <- c(gft_GL_TL, gft_TL_NA[!(gft_TL_NA$gene_id %in% gft_GL_TL$gene_id)])
+  gft_gen_trans <- c(gft_Transcripts, gft_GL[gft_GL$type=="gene"]) # readd genes (have transcript support level NA)
+
+  # longest transcript
+  if(longest_transcript==T){
+    # use genomicfeatures file to get information about transcript length (sum of exons)
+    gft_GenFeat<- makeTxDbFromGRanges(gft_gen_trans)
+    transcriptLength <- transcriptLengths(gft_GenFeat)
+
+    # add transcript_length to granges
+    gft_GL_TL_dframe <- as.data.frame(gft_gen_trans)
+    gft_with_tx_len <- merge(transcriptLength[, c("tx_name", "tx_len")], gft_GL_TL_dframe, by.x ="tx_name", by.y = "transcript_id",
+                             all.y = TRUE)
+
+    gft_longestTranscript <- gft_with_tx_len[gft_with_tx_len$type == "transcript", ] %>%
+      dplyr::group_by(.$gene_id) %>%
+      dplyr::arrange(dplyr::desc(.$tx_len)) %>%
+      dplyr::slice(1) %>%
+      ungroup()
+
+    gft_regions_longestTranscript <- gft_gen_trans[gft_gen_trans$transcript_id %in% gft_longestTranscript$tx_name]
+    gft_region_genes_LT <- c(gft_regions_longestTranscript, gft_gen_trans[gft_gen_trans$type=="gene" & gft_gen_trans$gene_id %in% gft_regions_longestTranscript$gene_id])
+    gft_gen_trans <- gft_region_genes_LT
+  }
+  return(gft_gen_trans)
+}
+
+annotation <- filter_gft_anno(gft_anno = mygft,
+                              standard_chrom = T,
+                              protein_coding = F,
+                              include_GL_3 = T,
+                              longest_transcript = F)
+
+```
+
+
+## clean annotation
+- exclude pseudogenes
+- throw out identical annotations
+- shorten gene_ids
+
+
+```{r}
+
+# exclude pseudogenes
+annotation <- annotation[!grepl(annotation$gene_type, pattern = "pseudo") & !(annotation$gene_type %in% c("TEC", "Mt_tRNA", "Mt_rRNA"))]
+
+# throw out identical annotations
+annotation <- as.data.frame(annotation) %>%
+unique.data.frame(.) %>%
+makeGRangesFromDataFrame(keep.extra.columns = T)
+
+# shorten gene_ids
+annotation$gene_id <- substr(annotation$gene_id, 1,15 )
+
+# make txdb to load it faster later
+anno_txdb <- makeTxDbFromGRanges(annotation)
+
+```
+
+
+```{r}
+# save filtered annotation
+saveRDS(annotation, paste0("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/", "annotation.rds"))
+
+saveDb(anno_txdb , file = "/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/annotation_txdb.db")
+
+```
+
+# Output
+
+- crosslinks: bw_merges.rds
+-filtered annotation: annotation.rds

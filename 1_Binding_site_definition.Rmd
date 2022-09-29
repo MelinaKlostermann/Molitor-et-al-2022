@@ -6,16 +6,11 @@ output:
   BiocStyle::html_document:
     toc_float: TRUE
     toc: TRUE
-vignette: >
-  %\VignetteIndexEntry{AS USP39 KD}
-  %\VignetteEngine{knitr::rmarkdown}
-  %\VignetteEncoding{UTF-8}
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, results = TRUE)
 ```
-
 
 # What was done?
 
@@ -45,51 +40,6 @@ report_color <- (pals::ocean.solar(15))
 source("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/XX-helpful-chunks/theme_paper.R")
 ```
 
-```{r}
-################################################################################
-###                       CODE REVIEW SUMMARY                                ###
-################################################################################
-### 
-### Review by:          Mirko Brüggemann
-### Comment shortcut:   MB
-### Date:               10.08.2022
-### Time spent:         ~3h
-
-# Main objective: 
-# Define binding sites from PureCLIP crosslink positions
-# 
-# Input:
-# - PureCLIP sites as .bed
-# - iCLIP signal as .bw for each replicate (1-4)
-# - iCLIP signal as .bw as a merge of all replicates 
-# - gene annotation as of gencode v31 as GFF3
-# 
-# Minor tasks the script performs are: 
-# - Filtering of gene annotation
-# 
-# Major/ issues:
-# - No major issues or bugs. The script works as it is and produces correct results.
-#   It is well structured and code logic can be followed easily 
-#
-# Minor/ suggestions:
-# - The script deals with the gencode annotation filtering with is never used and 
-# unnecessary (-> could be moved to its own script)
-# - .bw files are imported several times over again in different formats (RLE and
-#   GRanges). 
-# - The GRanges imports are never used, so they could be removed
-# - The RLE imports happen on various levels (at the begining of the script,
-#   within functions, at the end of the script).
-# - The same iCLIP signal is also imported twice, as merge and as replicates
-# - Binding site post-processing and filtering assumes a width of 5nt which is 
-#   hard coded several times, which makes testing error prone
-# - Binding site post-processing and filtering has small logical inconsitencies
-#   in the way filtering steps act upon each other
-#
-#
-# Nice job! 
-# Feel free to review the review :) 
-#
-```
 
 
 # Input
@@ -125,6 +75,21 @@ bw_4_plus_path <-
 bw_4_minus_path <-
   "/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_endo/imb_koenig_2020_07_koenig_iCLIP_PURA_endogene/bw/all/DR/imb_koenig_2020_07_PURAendo_7.v2uniqMD.duprm.minus.bw"
 
+# import rles
+# get bw's as rles
+sample1.minus.rle <- import.bw( bw_1_minus_path, as="Rle") %>% keepStandardChromosomes(pruning.mode = "coarse")
+sample2.minus.rle <- import.bw( bw_2_minus_path, as="Rle") %>% keepStandardChromosomes(pruning.mode = "coarse")
+sample3.minus.rle <- import.bw( bw_3_minus_path, as="Rle") %>% keepStandardChromosomes(pruning.mode = "coarse")
+sample4.minus.rle <- import.bw( bw_4_minus_path, as="Rle") %>% keepStandardChromosomes(pruning.mode = "coarse")
+
+sample1.plus.rle <- import.bw( bw_1_plus_path, as="Rle") %>% keepStandardChromosomes(pruning.mode = "coarse")
+sample2.plus.rle <- import.bw( bw_2_plus_path, as="Rle") %>% keepStandardChromosomes(pruning.mode = "coarse")
+sample3.plus.rle <- import.bw( bw_3_plus_path, as="Rle") %>% keepStandardChromosomes(pruning.mode = "coarse")
+sample4.plus.rle <- import.bw( bw_4_plus_path, as="Rle") %>% keepStandardChromosomes(pruning.mode = "coarse")
+
+bw_plus_rle <- import.bw(bw_all_plus_path, as="Rle")
+bw_minus_rle <- import.bw(bw_all_minus_path, as="Rle")
+
 
 
 # PureCLIP calls (obtained by running PureCLIP on pseudo-samples 1u2 and 3u4 see below)
@@ -135,157 +100,14 @@ pureclip_path <- "/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/P
 
 mygft <-"/Users/melinaklostermann/Documents/projects/anno/GENCODEv31-p12/gencode.v31.annotation.gff3"
 
+# size of BS 
+wbs <- 5
 
 ```
 
 # Preprocess input files
 
 ```{r}
-################################
-# Import crosllink files
-###############################
-bw_1_plus <- import.bw(bw_1_plus_path)
-bw_1_minus <- import.bw(bw_1_minus_path)
-
-strand(bw_1_plus) <- "+"
-strand(bw_1_minus) <- "-"
-
-bw_2_plus <- import.bw(bw_2_plus_path)
-bw_2_minus <- import.bw(bw_2_minus_path)
-
-strand(bw_2_plus) <- "+"
-strand(bw_2_minus) <- "-"
-
-bw_3_plus <- import.bw(bw_3_plus_path)
-bw_3_minus <- import.bw(bw_3_minus_path)
-
-strand(bw_3_plus) <- "+"
-strand(bw_3_minus) <- "-"
-
-bw_4_plus <- import.bw(bw_4_plus_path)
-bw_4_minus <- import.bw(bw_4_minus_path)
-
-strand(bw_4_plus) <- "+"
-strand(bw_4_minus) <- "-"
-
-bw_all_plus <- import.bw(bw_all_plus_path)
-bw_all_minus <- import.bw(bw_all_minus_path)
-
-strand(bw_all_plus) <- "+"
-strand(bw_all_minus) <- "-"
-
-### TODO MB
-### 1)
-### The split_bw_crosslinks_to_1_nt function splits the GRanges from the bigwigs into 1nt chunks, since they are not per default
-### an other way would be to import the bigwigs as RLE and then turn the RLE into a GRanges instead.
-### 2)
-### bw_all_samples and bw_merges are constructed but never used in the script. They are just exported at the end.
-### If they are used by some other script, why not constructing the objects there?
-### Also both are unnamed list which can only be accessed by using [], maybe turn them into named lists instead
-### eg bw_merges$bw_all_plus would be a nicer way
-### 
-
-################################
-# Split crosslinks to 1-nt events
-################################
-split_bw_crosslinks_to_1_nt <- function(bw){
-  # split ranges in 1 nt events
-  bw_split <- exomeCopy::subdivideGRanges(bw, subsize=1)
-  # match scores by an overlap index
-  idx <- findOverlaps(bw_split, bw)
-  # add scores
-  bw_split$score <- bw[subjectHits(idx)]$score
-  # read strand info
-  strand(bw_split) <- strand(bw)
-  return(bw_split)
-}
-
-bw_all_samples <- list(bw_1_plus, bw_1_minus, bw_2_plus, bw_2_minus, bw_3_plus, bw_3_minus, bw_4_plus, bw_4_minus) %>%
-  lapply(., function(x) split_bw_crosslinks_to_1_nt(bw=x)) %>%
-  lapply(., function(x) keepStandardChromosomes(x, pruning.mode = "coarse"))
-
-bw_merges <- list(bw_all_plus, bw_all_minus) %>% lapply(., function(x) split_bw_crosslinks_to_1_nt(bw=x)) %>%
-  lapply(., function(x) keepStandardChromosomes(x, pruning.mode = "coarse"))
-
-########################################
-# Load and filter Gencode annotation
-#######################################
-
-### TODO MB
-### could be sourced out to a seperate script to improve reproducibility since
-### all analysis for the entire project should be based on the same annotation.
-### You clould have one script that filters the annoation and stores it. All 
-### other scripts could then just load the filtered annotation as TxDB or GRanges.
-### Also the filtered annotation is never used in this script. So there is no need to 
-### import or process it here
-### 
-
-filter_gft_anno <- function(gft_anno, standard_chrom, protein_coding, include_GL_3, longest_transcript){
-  library(GenomicRanges)
-  library(dplyr)
-  library(GenomicFeatures)
-  
-  # load gft
-  gft <- rtracklayer::import(gft_anno)
-  
-  # standard chromosomes
-  if(standard_chrom == T){
-    gft <-keepStandardChromosomes(gft, pruning.mode = "coarse")
-  }
-  
-  # protein-coding transcripts
-  if(protein_coding == T){
-    gft <- gft[gft$gene_type=="protein_coding"]
-    gft <- c(gft[gft$type!="gene" & gft$transcript_type=="protein_coding"], gft[gft$type=="gene"])
-  }
-  
-  # gene level 1 or 2
-  gft_GL<- gft[gft$level <= 2]
-  
-  # gene level 3
-  if(include_GL_3==T){
-    gft_GL3 <- gft[gft$level==3 & !(gft$gene_id %in% gft_GL$gene_id)]    
-    gft_GL <- c(gft_GL, gft_GL3)  
-  }
-  
-  # transcript support level <=3 or NA
-  gft_GL_TL <-gft_GL[!is.na(gft_GL$transcript_support_level) & gft_GL$transcript_support_level <= 3]
-  gft_TL_NA <- gft_GL[is.na(gft_GL$transcript_support_level)]
-  gft_Transcripts <- c(gft_GL_TL, gft_TL_NA[!(gft_TL_NA$gene_id %in% gft_GL_TL$gene_id)])
-  gft_gen_trans <- c(gft_Transcripts, gft_GL[gft_GL$type=="gene"]) # readd genes (have transcript support level NA)
-  
-  # longest transcript
-  if(longest_transcript==T){
-    # use genomicfeatures file to get information about transcript length (sum of exons)
-    gft_GenFeat<- makeTxDbFromGRanges(gft_gen_trans)
-    transcriptLength <- transcriptLengths(gft_GenFeat)
-    
-    # add transcript_length to granges
-    gft_GL_TL_dframe <- as.data.frame(gft_gen_trans)
-    gft_with_tx_len <- merge(transcriptLength[, c("tx_name", "tx_len")], gft_GL_TL_dframe, by.x ="tx_name", by.y = "transcript_id",
-                             all.y = TRUE)
-    
-    gft_longestTranscript <- gft_with_tx_len[gft_with_tx_len$type == "transcript", ] %>%
-      dplyr::group_by(.$gene_id) %>%
-      dplyr::arrange(dplyr::desc(.$tx_len)) %>%
-      dplyr::slice(1) %>%
-      ungroup()
-    
-    gft_regions_longestTranscript <- gft_gen_trans[gft_gen_trans$transcript_id %in% gft_longestTranscript$tx_name]
-    gft_region_genes_LT <- c(gft_regions_longestTranscript, gft_gen_trans[gft_gen_trans$type=="gene" & gft_gen_trans$gene_id %in% gft_regions_longestTranscript$gene_id])
-    gft_gen_trans <- gft_region_genes_LT
-  }
-  return(gft_gen_trans)
-}
-
-annotation <- filter_gft_anno(gft_anno = mygft,
-                              standard_chrom = T, 
-                              protein_coding = F, 
-                              include_GL_3 = T, 
-                              longest_transcript = F)
-
-
-
 
 ########################
 # Get PureCLIP output
@@ -322,16 +144,9 @@ Define_Binding_Sites <- function(pureclip, bw_plus, bw_minus, windowsize, out){
   # remove sites with 1 or 2 nt length
   pureclip = pureclip[width(pureclip) > 2]
   
-  ### TODO MB
-  ### here where you actually use the bigwig signal you re-import it 
-  ### as RLE. It is also maybe not the best idea to have the RLE import hidden 
-  ### in a function. 
-  ### It is a bit confusing that your script imports the same information in 4
-  ### different formats at various times in the script (GRanges, RLE + Replicate, Merge)
-  ### 
+  
   bw_plus = import.bw(bw_plus, as="Rle")
   bw_minus = import.bw(bw_minus, as= "Rle")
-  
   
   
   final.peaks.plus.gr <- GRanges()
@@ -408,38 +223,16 @@ Define_Binding_Sites <- function(pureclip, bw_plus, bw_minus, windowsize, out){
                                                     peaks.minus.grl))
     }
   }
-  ### TODO MB
-  ### this is nice for an internal control!
-  ### it allows you to test if there is any strand specific problem in the peak/
-  ### binding site processing step. But for a final script and output binding
-  ### sites should be merged into one file for better visualization in IGV and 
-  ### import/ export by other scripts
-  ### I would also suggest to have the export of the final .bed files separated 
-  ### from the function core. 
-  ### 
-  
-  export(final.peaks.plus.gr,
-         con= paste(out,"_plus.bed", sep = ""),
-         format = "bed")
-  export(final.peaks.minus.gr,
-         con= paste(out,"_minus.bed", sep = ""),
-         format = "bed")
-  
-  ### TODO MB
-  ### remove if not needed
-  ### 
-  # save(final.peaks.minus.gr, file= paste(out,"_plus.RData", sep = ""))
-  # save(final.peaks.plus.gr, file= paste(out,"_minus.RData", sep = ""))
-  
-  returnlist <- list(peaks.minus = final.peaks.minus.gr, peaks.plus = final.peaks.plus.gr)
-  return(returnlist)
+
+  binding_sites <- c(final.peaks.plus.gr, final.peaks.minus.gr)
+  return(binding_sites)
 }
 
 
 binding_sites <- Define_Binding_Sites(pureclip = pureclip_sites, 
                                       bw_plus = bw_all_plus_path, 
                                       bw_minus = bw_all_minus_path,
-                                      windowsize = 5, # windowsize - size that binding sites should have 
+                                      windowsize = wbs, # windowsize - size that binding sites should have 
                                       out =  "./Binding_site_windows_5nt" )
 
 
@@ -447,40 +240,29 @@ binding_sites <- Define_Binding_Sites(pureclip = pureclip_sites,
 ############################
 # Keep only BS with PureCLIP center
 ############################
-# get all BS
-binding_sites <- c(binding_sites$peaks.plus, binding_sites$peaks.minus)
+
 # get centers
-### TODO MB
-### be aware that this is hard coded for a binding site width of 5
-### 
-BS_centers <- binding_sites - 2
+BS_centers <- binding_sites - ((wbs-1)/2)
 
 # keep only overlaps with PureCLIP sites
-pureclip_sites_anno_bw_SOB <- makeGRangesFromDataFrame(pureclip_sites, 
-                                                       keep.extra.columns = TRUE)
+pureclip_sites <- makeGRangesFromDataFrame(pureclip_sites,  keep.extra.columns = TRUE)
+
+# add score from center PureCLIP sites as binding site score
 binding_sites_center_PS <- binding_sites[queryHits(findOverlaps(
-  BS_centers, pureclip_sites))]
+ BS_centers, pureclip_sites))]
 
 binding_sites_center_PS$score <- pureclip_sites[subjectHits(findOverlaps(
   BS_centers, pureclip_sites))]$score
 
+binding_sites_center_PS$score <- pureclip_sites[subjectHits(findOverlaps(
+  BS_centers, pureclip_sites, ignore.strand = F))]$score
 
-### TODO MB
-### since you reduced the binding sites to only those that have a PureCLIP site at
-### the center you don't have to check this again at this point
-### this means that the below filter essentially filters for the maximum crosslinks
-### at the center position
-### 
+
 ###########################
 # Keep only BS with max PureCLIP site at center
 ##########################
 # get bw rles
 
-### TODO MB
-### Another import of merged bigwigs as RLE
-### 
-bw_plus_rle <- import.bw(bw_all_plus_path, as="Rle")
-bw_minus_rle <- import.bw(bw_all_minus_path, as="Rle")
 
 # split BS by strand
 binding_sites_center_PS_plus <- binding_sites_center_PS[strand(binding_sites_center_PS)=="+"]
@@ -494,15 +276,11 @@ binding_sites_center_PS_minus_m <- as.matrix(bw_minus_rle[binding_sites_center_P
 max_BS_plus <- apply(binding_sites_center_PS_plus_m,1,max)
 max_BS_minus <- apply(binding_sites_center_PS_minus_m,1,max)
 
-# subset for center = max
-### TODO MB
-### be aware that this is hard coded for a binding site width of 5
-### a dynamic alternative would be `ceiling(windowsize/2)`
-### 
+
 binding_sites_center_PSmax_plus <- binding_sites_center_PS_plus[
-  max_BS_plus == binding_sites_center_PS_plus_m[,3]] 
+  max_BS_plus == binding_sites_center_PS_plus_m[,((wbs-1)/2)]] 
 binding_sites_center_PSmax_minus <- binding_sites_center_PS_minus[
-  max_BS_minus == binding_sites_center_PS_minus_m[,3]]
+  max_BS_minus == binding_sites_center_PS_minus_m[,((wbs-1)/2)]]
 
 
 
@@ -512,11 +290,9 @@ binding_sites_center_PSmax_minus <- binding_sites_center_PS_minus[
 binding_sites_center_PSmax_plus_m <- as.matrix(bw_plus_rle[binding_sites_center_PSmax_plus])
 binding_sites_center_PSmax_minus_m <- as.matrix(bw_minus_rle[binding_sites_center_PSmax_minus])
 
-### TODO MB
-### be aware that this is hard coded for a binding site width of 5
-### 
-crosslink_sites_plus <- apply(binding_sites_center_PSmax_plus_m, 1, function(x) 5-sum(x == 0)) 
-crosslink_sites_minus <- apply(binding_sites_center_PSmax_minus_m, 1, function(x) 5-sum(x == 0)) 
+
+crosslink_sites_plus <- apply(binding_sites_center_PSmax_plus_m, 1, function(x) wbs-sum(x == 0)) 
+crosslink_sites_minus <- apply(binding_sites_center_PSmax_minus_m, 1, function(x)wbs-sum(x == 0)) 
 
 
 binding_sites_center_PSmax_plus_2cl <- binding_sites_center_PSmax_plus[crosslink_sites_plus > 1]
@@ -531,22 +307,6 @@ binding_sites_final <- c(binding_sites_center_PSmax_plus_2cl , binding_sites_cen
 # Sample reproducibility
 
 ```{r}
-### TODO MB
-### here where you actually use the replicate bigwig signal you re-import them 
-### as RLE, which makes the GRanges import at the beginning not necessary. Also
-### note that if you label an entire section for importing data one does not
-### expect that there is an additional import of data at the bottom of the script.
-###
-# get bw's as rles
-sample1.minus.rle <- import.bw( bw_1_minus_path, as="Rle") %>% keepStandardChromosomes(pruning.mode = "coarse")
-sample2.minus.rle <- import.bw( bw_2_minus_path, as="Rle") %>% keepStandardChromosomes(pruning.mode = "coarse")
-sample3.minus.rle <- import.bw( bw_3_minus_path, as="Rle") %>% keepStandardChromosomes(pruning.mode = "coarse")
-sample4.minus.rle <- import.bw( bw_4_minus_path, as="Rle") %>% keepStandardChromosomes(pruning.mode = "coarse")
-
-sample1.plus.rle <- import.bw( bw_1_plus_path, as="Rle") %>% keepStandardChromosomes(pruning.mode = "coarse")
-sample2.plus.rle <- import.bw( bw_2_plus_path, as="Rle") %>% keepStandardChromosomes(pruning.mode = "coarse")
-sample3.plus.rle <- import.bw( bw_3_plus_path, as="Rle") %>% keepStandardChromosomes(pruning.mode = "coarse")
-sample4.plus.rle <- import.bw( bw_4_plus_path, as="Rle") %>% keepStandardChromosomes(pruning.mode = "coarse")
 
 # sum up cl events per binding site 
 bs.p = binding_sites_final[strand(binding_sites_final) == "+"]
@@ -570,12 +330,6 @@ binding_sites = c(bs.p, bs.m)
 # Overlap of binding sites between samples
 ###########################################
 
-### TODO MB
-### Here a binding site is considered reproducible by the replicate, if it has a
-### single crosslink event overlapping from that replicate. Maybe be more 
-### stringent here? See the dynamic replicate thresholding of BindingSiteFinder, 
-### because library size varies between replicates
-### 
 
 binding_sites$names <-  1:length(binding_sites)
 UpSet_List_cutoff20 = list(rep1 = binding_sites[binding_sites$clp_rep1> 0]$names,
@@ -641,23 +395,11 @@ GGally::ggpairs(repro_scatter_df, upper = list(continuous = cor_fun), lower = li
 
 # Output
 
-- crosslinks: bw_merges.rds
-- crossliks per sample: bw_all_samples.rds
-
 - binding sites: binding_sites.rds
--filtered annotation: annotation.rds
 
 ```{r eval=FALSE, include=FALSE}
 
-# crosslinks (endogenous PURA, HeLa cells)
-saveRDS(bw_all_samples, paste0("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/", "bw_all_samples.rds"))
-saveRDS(bw_merges, paste0("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/", "bw_merges.rds"))
-
 # PURA binding sites
 saveRDS(binding_sites, paste0("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/", "binding_sites.rds"))
-
-# filtered annotation
-
-saveRDS(annotation, paste0("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/", "annotation.rds"))
 
 ```

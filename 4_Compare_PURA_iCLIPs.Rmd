@@ -2,14 +2,7 @@
 title: "4 Comparison of the crosslink patterns in three different PURA iCLIP experiments from HeLa cells and NPC PURA iCLIP"
 author: "Melina"
 date: "`r format(Sys.time(), '%d %B, %Y')`"
-output:
-  BiocStyle::html_document:
-    toc_float: TRUE
-    toc: TRUE
-vignette: >
-  %\VignetteIndexEntry{AS USP39 KD}
-  %\VignetteEngine{knitr::rmarkdown}
-  %\VignetteEncoding{UTF-8}
+output: pdf_document
 ---
 
 ```{r setup, include=FALSE}
@@ -244,7 +237,7 @@ plotGviz(GR = regions_for_gviz_2[3]  , i = 1, w = c(200,100),  cl_plus =hela_cl[
 #==================================
 regions_for_gviz_3 <- annotation[annotation$type == "gene"] %>% 
   as.data.frame(.) %>%
-  filter(gene_name %in% c("LSM14A", "DDX6") | substr(gene_id,1,15) %in% c("ENSG00000283293")) %>%
+  filter(gene_name %in% c("LSM14A", "DDX6") ) %>%
   makeGRangesFromDataFrame(keep.extra.columns = T)
 
 # LSM14A
@@ -252,6 +245,8 @@ plotGviz(GR = regions_for_gviz_3[2]  , i = 1, w = c(0,0),  cl_plus =hela_cl[[1]]
 
 # DDX6
 plotGviz(GR = regions_for_gviz_3[1]  , i = 1, w = c(0,0),  cl_plus =hela_cl[[1]], cl_minus = hela_cl[[2]], name = regions_for_gviz_1[1]$gene_name , anno = anno_txdb, BS = BS, color = "darkred")
+
+
 
 
 #=================================
