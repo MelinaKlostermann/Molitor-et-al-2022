@@ -25,8 +25,8 @@ library(GenomicFeatures)
 
 
 report_color <- (pals::ocean.solar(15))
-source("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/XX-helpful-chunks/theme_paper.R")
-output_path <- "/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/"
+source("~/Desktop/Project/Code review/Molitor-et-al-2022/theme.R")
+output_path <- "~/Desktop/Project/Code review/out/Molitor-et-al-2022/"
 
 ```
 
@@ -41,10 +41,10 @@ output_path <- "/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2
 # Input
 ```{r input}
 # RNAseq
-htSeq_dir <- "/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/03-RNAseq/00-htseq/htseq_antisense.out"
+htSeq_dir <- "~/Desktop/Data/code review/htseq_antisense.out"
 
 # filtered annotation
-annotation <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/annotation.rds")
+annotation <- readRDS("~/Desktop/Data/code review/annotation.rds")
 
 ```
 
@@ -217,8 +217,14 @@ reactome_geneset <- msigdb_gsets("Homo sapiens", "C2", "CP:REACTOME")
 cell_comp_geneset <- msigdb_gsets("Homo sapiens", "C5", "CC")
 
 # RNAseq sig
+####################################
+# since there are NA in the pajd
+# res_RNAseq_kd[res_RNAseq_kd$padj < p_cut & res_RNAseq_kd$log2FoldChange < 0,] outputs a lot of rows with the NA. I the NA rows can be remove with 
+# res_RNAseq_kd[which(res_RNAseq_kd$padj < p_cut & res_RNAseq_kd$log2FoldChange < 0),] 
+# I think this did not influence the final result for the GO but I think it would be good to check whether this is a problem for other analysis ; )
+
 res_sig_kd_list<- list( down = res_RNAseq_kd[res_RNAseq_kd$padj < p_cut & res_RNAseq_kd$log2FoldChange < 0,],
-                 up = res_RNAseq_kd[res_RNAseq_kd$padj < p_cut  & res_RNAseq_kd$log2FoldChange > 0,])
+                  up = res_RNAseq_kd[res_RNAseq_kd$padj < p_cut  & res_RNAseq_kd$log2FoldChange > 0,])
 
 bg = res_RNAseq_kd[res_RNAseq_kd$baseMean>0,]$hgnc_symbol
 
