@@ -193,6 +193,7 @@ ggplot(bound_genes_gg, aes(x = gene_type))+
   coord_flip()+
   theme_paper()
 
+ggsave(paste0(outpath, "gene_types.pdf"), width = 5 , height  = 5, units = "cm")
 
 # gene regions
 
@@ -207,7 +208,7 @@ ggplot(binding_sites_gg, aes(x = type))+
   theme_paper()+
   ylab("Number of crosslink events")
 
-
+ggsave(paste0(outpath, "gene_regions.pdf"), width = 5 , height  = 5, units = "cm")
 
 ```
 
@@ -334,7 +335,7 @@ ggplot(cl_3, aes(x=type))+
   theme_paper()+
   ylab("Number of crosslink events")
 
-#ggsave(paste0(outpath, "crosslink_gene_regions.pdf"), width = 5 , height  = 5, units = "cm")
+ggsave(paste0(outpath, "crosslink_gene_regions.pdf"), width = 5 , height  = 5, units = "cm")
 
 ```
 
@@ -345,6 +346,7 @@ ggplot(cl_3, aes(x=type))+
 # split for crosslinks on genes with highestbbinding in cds vs utr
 BS_cds_utr <- binding_sites_with_regions[binding_sites_with_regions$region %in% c("CDS", "three_prime_UTR"),]
 highest_BS_per_gene <- BS_cds_utr %>%
+  as.data.frame(.) %>%
   group_by(gene_id) %>%
   arrange(desc(score), .by_group = T) %>%
   dplyr::slice(1) %>%
@@ -357,7 +359,7 @@ idx_cl_gene_id <- as.data.frame(idx_cl_gene_id) %>%  filter(!duplicated(queryHit
 
 cl$gene_id <- NA
 anno_gene <- annotation[annotation$type == "gene"]
-cl[idx_cl_gene_id$queryHits]$gene_id <- substr(anno_gene[idx_cl_gene_id$subjectHits]$gene_id,1,15)
+cl[idx_cl_gene_id$queryHits]$gene_id <- anno_gene[idx_cl_gene_id$subjectHits]$gene_id
 
 cl_on_genes <- cl[!is.na(cl$gene_id)] %>%
   as.data.frame(.) %>%
@@ -371,7 +373,7 @@ cl_on_genes <- cl[!is.na(cl$gene_id)] %>%
 profile <- metaGeneProfile(cl_on_genes, annotation = gff3, group="region")
 profile$Plot + ylim(c(0,0.9)) + theme_paper() + theme(legend.position = NULL)
 
-#ggsave(paste0(outpath,"MetaGeneProfile_cds_utr.pdf" ), width = 9, height = 5, units = "cm")
+ggsave(paste0(outpath,"MetaGeneProfile_cds_utr.pdf" ), width = 9, height = 5, units = "cm")
 
 ```
 

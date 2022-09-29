@@ -32,55 +32,6 @@ outpath <- "/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/
 
 ```
 
-```{r}
-################################################################################
-###                       CODE REVIEW SUMMARY                                ###
-################################################################################
-### 
-### Review by:          Mario Keller
-### Comment shortcut:   MK
-### Date:               17.08.2022 / 18.08.2022
-### Time spent:         ~3.5h
-
-# Main objective: 
-# - Identification of differentially regulated proteins
-# - Functional enrichment analysis of regulated proteins
-# - Overlap of regulated proteins and corresponding RNAs
-# - Overlap of protein regulation and binding information from iCLIP
-# Input:
-# - MaxQuant LFQ quantifcations as XLSX-File
-# - DESeq2 results and rlog-values as RDS-Files
-# - PURA binding sites as RDS-File
-#
-# # 
-# Major/ issues:
-# - Multiple hypothesis correction is based on the Holm method and not on BH
-# - As discussed in Slack still USS information is used 
-#
-# Minor/ suggestions:
-# - Most of the time you use the dplyr way to filter things but sometime you
-#   switch to subsetting data.frames via brackets (see line 149)
-# - You often produce new data.frames based on subsetting a certain data.frame.
-#   Most of the time it would be sufficient to add a column to the original 
-#   data.frame to create your subsets. 
-# - Sometimes things can be done with less code. I placed some shorter code at 
-#   selected positions
-# - In your ggplot code you often use xlim() and ylim() to adjust axes. This may
-#   be risky as you might remove entries from your data.frame. Better use 
-#   coord_cartesian(xlim=X, ylim=X)
-# - In the enrichment analysis you claim to use all proteins quantified by
-#   MaxQuant as the background, which is not true
-# - You use left_joins() to combine the protein and RNA log2FCs, where an 
-#   inner_join() would make more sense
-# - At some points you use code that has no effect like when you apply substr()
-#   on the gene identifier to remove the version, which is not part of the identifier
-# 
-# Conclusion:
-# - Analyses are reliable and trustworthy
-# - Well commented
-#
-```
-
 
 # What is done?
 
@@ -175,7 +126,7 @@ multiple_protein_ids  <- multiple_protein_ids  %>% rowwise(.) %>%
   mutate(across(c("ID1", "ID2", "ID3"), 
                 ~unlist(strsplit(.x, split = "_"))[1] ))
 
-# search vor major proteins in alternative names
+# search for major proteins in alternative names
 multiple_protein_ids <- multiple_protein_ids %>% 
   rowwise() %>%
   mutate(synonymous_names = case_when(
@@ -710,10 +661,6 @@ list_heat_matix[[i]] <- list_heat_matix[[i]] / sds
 
 }
 
-
-
-### TODO MK
-### Check BS definition!!
 
 ########### scores
 binding_group <- data.frame(gene_name = gene_names ) %>%
