@@ -57,11 +57,14 @@ First DeSEq is run on the RNAseq count files to calculate foldchanges between al
 ######################
 # deSeq
 #####################
+# clean htseq table
 htseq_matrix <- data.table::fread(htSeq_dir) %>% as.data.frame()
 rownames(htseq_matrix) <- htseq_matrix$`This is task 1`
 htseq_matrix$`This is task 1` <- NULL
 htseq_matrix <- htseq_matrix[, c(1:4, 9:12)]
 colnames(htseq_matrix) <- c("kd1", "kd2", "kd3", "kd4",  "wt1", "wt2", "wt3", "wt4")
+htseq_matrix <- htseq_matrix[!grepl("_PAR_Y", rownames(htseq_matrix)),]
+htseq_matrix <- htseq_matrix[!(rownames(htseq_matrix) %in% c("__no_feature", "__ambiguous", "__too_low_aQual" , "__not_aligned"  ,"__alignment_not" )),]
 
 
 condition_all <- c(rep("kd",4), rep("wt",4))
@@ -82,8 +85,6 @@ saveRDS(dds_analysis_rlog, "/Users/melinaklostermann/Documents/projects/PURA/Mol
 res_RNAseq_kd <- results(dds_analysis, contrast = c("condition", "kd", "wt"))%>% as.data.frame()
 res_RNAseq_kd$gene_id <- rownames(res_RNAseq_kd)
 
-# remove rows with counting info
-res_RNAseq_kd <- res_RNAseq_kd %>% filter(!(gene_id %in% c("__no_feature", "__ambiguous", "__too_low_aQual" , "__not_aligned"  ,"__alignment_not" )))
 
 ```
 
@@ -110,8 +111,6 @@ res_RNAseq_kd <- cbind(res_RNAseq_kd, info_biomart_new[idx_biomart_new,])
 
 saveRDS(res_RNAseq_kd, "/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/deseq.rds")
 
-
-
 ```
 
 # Vulcano plot
@@ -136,6 +135,7 @@ ggplot(res_RNAseq_kd, aes(x=log2FoldChange, y=-log10(padj)))+
    theme(legend.position = "none", aspect.ratio = 1/1)+
   xlim(c(-3,3))
 
+ggsave(paste0(output_path, "rna_vulcano_paper.pdf"), width = 6, height = 6, units = "cm")
 ```
 
 # Count plot PURA
@@ -159,7 +159,7 @@ ggplot(pura_rna_counts, aes(x = rowname, y = value, color = group))+
   ylim(c(8,10))+
   theme(legend.position = "None")
 
-# ggsave(paste0(output_path, "pura_rna_counts.pdf"), height = 6, width = 5, units = "cm")
+ggsave(paste0(output_path, "pura_rna_counts.pdf"), height = 6, width = 5, units = "cm")
 
 
 ```

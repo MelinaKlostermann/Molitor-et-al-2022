@@ -22,8 +22,7 @@ library(ggpubr)
 library(Biostrings)
 library(BSgenome)
 
-
-source("~/Desktop/Project/Code review/Molitor-et-al-2022/theme.R")
+source("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/XX-helpful-chunks/theme_paper.R")
 
 ``` 
 
@@ -37,17 +36,16 @@ source("~/Desktop/Project/Code review/Molitor-et-al-2022/theme.R")
 
 ```{r}
 ## transcript sequences fasta from gencode
-transcript_fasta <- readDNAStringSet("~/Desktop/Data/code review/gencode.v31.transcripts.fa")
+transcript_fasta <- readDNAStringSet("/Users/melinaklostermann/Documents/projects/anno/GENCODEv31-p12/gencode.v31.transcripts.fa.gz")
 
 # binding sites
-BS <- readRDS("~/Desktop/Data/code review/binding_sites_characterized.rds")
-
+BS <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/binding_sites_characterized.rds") %>% makeGRangesFromDataFrame(keep.extra.columns = T)
 # crosslinks
-CL_list <- readRDS("~/Desktop/Data/code review/bw_merges.rds")
+CL_list <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/bw_merges.rds")
 cl <- c(CL_list[[1]], CL_list[[2]])
 
 # filtered annotation
-annotation <- readRDS("~/Desktop/Data/code review/annotation.rds")
+annotation <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/annotation.rds")
 
 ```
 
@@ -70,8 +68,6 @@ expressed_transcripts_GR_list <- subsetByOverlaps(annotation_transcripts_exons, 
   GRangesList(.) 
 
 
-# sequence of all transcripts
-transcript_fasta <- readDNAStringSet("~/Desktop/Data/code review/gencode.v31.transcripts.fa") #alternative extractTranscriptSeqs(x, transcripts, ...)
 transcript_anno_meta <- names(transcript_fasta) 
 transcript_anno_meta <- data.frame(all = transcript_anno_meta) %>%
   tidyr::separate(., col = all,
@@ -83,11 +79,7 @@ names(transcript_fasta) <- substring(transcript_anno_meta$transcript_id,1,15)
 # get transcript coordinates as GRanges
 transcriptome_seqs_coords <- GRanges(seqnames = names(transcript_fasta), IRanges(start = 1, width = width(transcript_fasta)), strand = "+")
 
-#################################################################################
-## this object is empty, I think the object expressed_transcripts do not contains the tx_name
-#################################################################################
-
-transcriptome_seqs_coords_expr <- transcriptome_seqs_coords[seqnames(transcriptome_seqs_coords) %in% substring(expressed_transcripts$transcript_id,1,15)] # Here I change the tx_name to transcript_id
+transcriptome_seqs_coords_expr <- transcriptome_seqs_coords[seqnames(transcriptome_seqs_coords) %in% substring(expressed_transcripts$transcript_id,1,15)] 
 
 
 ###########################
