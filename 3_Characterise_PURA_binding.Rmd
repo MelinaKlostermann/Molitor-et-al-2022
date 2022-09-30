@@ -45,56 +45,6 @@ outpath <- "/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/
 
 ``` 
 
-```{r}
-################################################################################
-###                       CODE REVIEW SUMMARY                                ###
-################################################################################
-### 
-### Review by:          Mirko Brüggemann
-### Comment shortcut:   MB
-### Date:               23.09.2022
-### Time spent:         ~2h
-
-# Main objective: 
-# Define binding profile for PURA binding sites, by overlapping with given 
-# GENCODE annotation
-# 
-# Input:
-# - PureCLIP binding sites from script 1
-# - gene annotation as of gencode v31 as GFF3 and rds
-# 
-# Minor tasks the script performs are: 
-# - match each binding site to a hosting transcript and transcript region
-# - Collects additional features of binding sites (Strongest per gene, gene profile)
-# - comparison with TPM values from a different dataset
-# 
-# Major/ issues:
-# - Hard to follow the code logic, very little comments and variables are often not 
-#   self explanatory. 
-# - Some objects then do have explanatory names, but then they do not 
-#   contain what the names suggests (eg strongest_BS does not contain binding sites,
-#   but rather a sum of nts coverged by binding sites grouped by the region type).
-# - In the part that identifies the bound gene type, the description said that the
-#   longest transcript is used if multiple are present. But I found an example 
-#   where this is not the case. (Maybe check this one, could also be that I got lost in the code)
-# - The final output file (binding_sites_with_regions) contains a lot of NAs and 
-#   is not clean (douplicated gene_id fields, that are sometimes NA and sometimes not)
-#
-# Minor/ suggestions:
-# - The gene annotation is included once as gff3 and once as GRanges loaded from a 
-#   precompiled rds file. And an additional txdb is generated and used as well.
-#   This seems a bit redundant 
-# - A lot of prints that produce unexpected result (eg. table(x) is used on object x
-#   but the result is not a table, but rather a single number. )
-# - Parts of the script contain code that is set to eval=FALSE, include=FALSE
-# - At least one code chunk could not be evaluated since it took longer than 2 min
-#   to execute. 
-# 
-# Nice job! 
-# Feel free to review the review :) 
-#
-```
-
 # Input
 
 ```{r input}
@@ -119,6 +69,23 @@ anno_txdb <- loadDb("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et
 
 # Bound Genes and regions
 
+## assign bound gene type 
+ 
+- many binding sites overlap with multiple genes (non codings!)
+- in IGV it look like rather the non-coding RNA than the protein-coding RNA is bound in that case
+- we therefore use a hieracry on gene types: lncRNA > miRNA > miscRNA > snRNA > snoRNA > protein-coding
+
+
+ 
+```{r}
+############################
+# annote binding sites with the bound ( = overlapping) gene
+################################
+#  overlaps are resolved by:
+# 1. for two genes of different type by the type hieracy
+# 2. for to protein coding genes: in this chunk one protein coding gene is assigned at random in the next chunk the region hieracry is used to make this decision and the gene info is changed then
+
+ 
 annotation_gene <- annotation[annotation$type=="gene"]
 
 # overlaps of bs with any gene
@@ -146,6 +113,9 @@ binding_sites_temp2 <- makeGRangesFromDataFrame(binding_sites_temp2, keep.extra.
 
 table(binding_sites_temp2$gene_type)
 
+# non coding rnas "fake" region non coding
+bs_temp_non_cod <- binding_sites_temp2[binding_sites_temp2$gene_type!= "protein_coding",] %>% makeGRangesFromDataFrame(., keep.extra.columns = T)
+bs_temp_non_cod$type <- "non_coding"
 ```
 
 ## Binding site region by hiercary approach
@@ -157,9 +127,6 @@ table(binding_sites_temp2$gene_type)
 ## Total number of binding sites per region
 
 ```{r}
-### TODO MB
-### does work as expected
-###
 
 # classify only protein coding genes, regions only from bound genes
 anno_regions <- annotation[annotation$gene_type == "protein_coding" & annotation$type %in% c("three_prime_UTR", "five_prime_UTR", "CDS") ]
@@ -312,6 +279,14 @@ ggplot(norm_regions, aes(x=region, y = norm_binding_per_reg_size))+
 
 ```
 
+## Strongest binding site per gene
+ 
+```{r eval=FALSE, include=FALSE}
+# check strongest binding site per gene, to see if distribution between regions shifts
+# --> the strongest BS per gene is more often in the 3'UTR
+strongest_BS <- binding_sites_with_regions %>%
+  as.data.frame(.) %>%
+  group_by(gene_id) %>%
   arrange(desc(score)) %>%
   dplyr::slice(1) %>%
   ungroup() 
@@ -550,9 +525,6 @@ ggplot(n_BS_per_gene, aes(x=n_BS_plot))+
 
 n_BS_per_gene_tpm <- left_join(n_BS_per_gene, rnaseq_counts, by = "gene_id" )
 
-### TODO MB
-### this should probably be viewed on log2 scale
-###
 
 ggplot(n_BS_per_gene_tpm, aes(x=mean_tpm_rnaseq, y = n_BS))+
   geom_point()+
@@ -654,11 +626,6 @@ ggsave(paste0(outpath, Sys.Date(), "cc_dndritic_iCLIP_paper.pdf"), width = 17, h
 - binding sites with additional infos (binding_sites_characterized.rds)
 
 ```{r eval=FALSE, include=FALSE}
-
-### TODO MB
-### final object contains a lot of NAs
-### in some columns it's expected, in others not
-### eg. the gene_id field seems to be duplicated (gene_id.1), but it's not always filled? 
 
 saveRDS(binding_sites_with_regions,  "/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/binding_sites_characterized.rds")
 
