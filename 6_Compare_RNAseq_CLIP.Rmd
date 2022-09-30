@@ -23,7 +23,7 @@ library(DESeq2)
 library(purrr)
 
 report_color <- (pals::ocean.solar(15))
-source("~/Desktop/Project/Code review/Molitor-et-al-2022/theme.R")
+source("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/XX-helpful-chunks/theme_paper.R")
 ```
 
 # What was done?
@@ -33,10 +33,10 @@ source("~/Desktop/Project/Code review/Molitor-et-al-2022/theme.R")
 # Input
 ```{r}
 # binding sites
-BS <- readRDS("~/Desktop/Data/code review/binding_sites_characterized.rds")
+BS <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/binding_sites_characterized.rds")
 
 # deseq analysis from PURA knockdown
-res_RNAseq <- readRDS("~/Desktop/Data/code review/deseq.rds")
+res_RNAseq <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/deseq.rds")
 
 ```
 
@@ -56,22 +56,14 @@ strongest_Bs_bound_gene <- BS %>% as.data.frame(.) %>%
   mutate(gene_id = substring(gene_id,1,15))
 
 
-################################
-# here the case_when does not work properly, all the rows with NA in log2FoldChange are labeled as TRUE
-# this can be easly checked with res_RNAseq_CLIP[is.na(res_RNAseq_CLIP$log2FoldChange),]
-################################
-
 # mark bound and unbound
 res_RNAseq_CLIP <- mutate(res_RNAseq, gene_id = substr(gene_id, 1, 15),
                           CLIP_bound=case_when(gene_id %in% strongest_Bs_bound_gene$gene_id ~ "bound",
                                                            T ~ "unbound"),
                      changing = case_when(log2FoldChange==0 ~ F,
-                                          log2FoldChange==NA ~ F, # change this to is.na(log2FoldChange) ~ F, would work properly
+                                          is.na(log2FoldChange) ~ F, 
                                           T~T))
 
-################################
-# The rows with the counting information, such as __ambiguous and __no_feature are still in the object res_RNAseq_CLIP
-# I think it is good to remove these rows : )
 
 
 # add matching scores
@@ -98,7 +90,7 @@ res_RNAseq_CLIP <- res_RNAseq_CLIP %>%
   mutate(sig.change = case_when(padj<=0.01 ~T,
                                 T~F))
 
-table(res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change==T,]$type)
+table(res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change==T,]$region)
 
 
 ```
@@ -121,7 +113,7 @@ plot_box_all
 #save(plot_box_all, file="/Users/melinaklostermann/Documents/PURA_oe_newpip/PURA_newpip/Report13-output/box_all.pdf")
 
 # boxplot regions 
-plot_box_region <- ggplot(res_RNAseq_CLIP[(res_RNAseq_CLIP$padj > 0.01),], aes(x=type, y=log2FoldChange, fill = type))+
+plot_box_region <- ggplot(res_RNAseq_CLIP[(res_RNAseq_CLIP$padj > 0.01),], aes(x=region, y=log2FoldChange, fill = region))+
   geom_boxplot()+
   theme_paper()+
   scale_fill_manual(values= c("#2AB7CA", "darkred","orange", "purple", "grey"), name = "iClip Hit")+ 
@@ -135,14 +127,14 @@ plot_box_region
 
 ```{r}
 ####################
-# vulcanos with one type of BS colored each
+# vulcanos with one region of BS colored each
 ###################
 
 # 3"UTR
 ggplot()+ 
   ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==F,],  aes(x=log2FoldChange, y= -log10(padj)), color = "grey", shape = 1, size = 0.5), dpi = 300)+
   ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==T,], aes(x=log2FoldChange, y= -log10(padj),  ), size = 0.5), dpi = 300)+
-  ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==T & res_RNAseq_CLIP$type =="three_prime_UTR",], aes(x=log2FoldChange, y= -log10(padj)), color = "darkred", size = 0.5), dpi = 300)+
+  ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==T & res_RNAseq_CLIP$region =="three_prime_UTR",], aes(x=log2FoldChange, y= -log10(padj)), color = "darkred", size = 0.5), dpi = 300)+
   theme_bw()+
   xlim(c(-2,2))+
   ylim(c(0,40))+
@@ -155,7 +147,7 @@ ggplot()+
 ggplot()+
   ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==F,],  aes(x=log2FoldChange, y= -log10(padj)), color = "grey", shape = 1,  size = 0.5), dpi = 300)+
   ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==T,], aes(x=log2FoldChange, y= -log10(padj)), size = 0.5), dpi = 300)+
-  ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==T & res_RNAseq_CLIP$type =="five_prime_UTR",], aes(x=log2FoldChange, y= -log10(padj)), color = "orange",  size = 0.5), dpi = 300)+
+  ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==T & res_RNAseq_CLIP$region =="five_prime_UTR",], aes(x=log2FoldChange, y= -log10(padj)), color = "orange",  size = 0.5), dpi = 300)+
   theme_bw()+
   xlim(c(-2,2))+
   ylim(c(0,40))+
@@ -167,7 +159,7 @@ ggplot()+
 ggplot()+
   ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==F,],  aes(x=log2FoldChange, y= -log10(padj)), color = "grey", shape = 1,  size = 0.5), dpi = 300)+
   ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==T,], aes(x=log2FoldChange, y= -log10(padj)), size = 0.5), dpi = 300)+
-  ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==T & res_RNAseq_CLIP$type =="CDS",], aes(x=log2FoldChange, y= -log10(padj)), color = "#2AB7CA",  size = 0.5), dpi = 300)+
+  ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==T & res_RNAseq_CLIP$region =="CDS",], aes(x=log2FoldChange, y= -log10(padj)), color = "#2AB7CA",  size = 0.5), dpi = 300)+
   theme_bw()+
   xlim(c(-2,2))+
   ylim(c(0,40))+
@@ -179,7 +171,7 @@ ggplot()+
 ggplot()+
   ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==F,],  aes(x=log2FoldChange, y= -log10(padj)), color = "grey", shape = 1,  size = 0.5), dpi = 300)+
   ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==T,], aes(x=log2FoldChange, y= -log10(padj)), size = 0.5), dpi = 300)+
-  ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==T & res_RNAseq_CLIP$type =="no_region",], aes(x=log2FoldChange, y= -log10(padj)), color = "purple",  size = 0.5), dpi = 300)+
+  ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==T & res_RNAseq_CLIP$region =="no_region",], aes(x=log2FoldChange, y= -log10(padj)), color = "purple",  size = 0.5), dpi = 300)+
   theme_bw()+
   xlim(c(-2,2))+
   ylim(c(0,40))+
@@ -191,7 +183,7 @@ ggplot()+
 ggplot()+
   ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==F,],  aes(x=log2FoldChange, y= -log10(padj)), color = "grey", shape = 1,  size = 0.5), dpi = 300)+
   ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==T,], aes(x=log2FoldChange, y= -log10(padj)), size = 0.5), dpi = 300)+
-  ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==T & res_RNAseq_CLIP$type =="intron",], aes(x=log2FoldChange, y= -log10(padj)), color = "blue",  size = 0.5), dpi = 300)+
+  ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==T & res_RNAseq_CLIP$region =="intron",], aes(x=log2FoldChange, y= -log10(padj)), color = "blue",  size = 0.5), dpi = 300)+
   theme_bw()+
   xlim(c(-2,2))+
   ylim(c(0,40))+

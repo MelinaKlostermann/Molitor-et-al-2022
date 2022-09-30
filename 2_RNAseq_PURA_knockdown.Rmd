@@ -25,8 +25,8 @@ library(GenomicFeatures)
 
 
 report_color <- (pals::ocean.solar(15))
-source("~/Desktop/Project/Code review/Molitor-et-al-2022/theme.R")
-output_path <- "~/Desktop/Project/Code review/out/Molitor-et-al-2022/"
+source("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/XX-helpful-chunks/theme_paper.R")
+output_path <- "/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/"
 
 ```
 
@@ -41,10 +41,10 @@ output_path <- "~/Desktop/Project/Code review/out/Molitor-et-al-2022/"
 # Input
 ```{r input}
 # RNAseq
-htSeq_dir <- "~/Desktop/Data/code review/htseq_antisense.out"
+htSeq_dir <- "/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/03-RNAseq/00-htseq/htseq_antisense.out"
 
 # filtered annotation
-annotation <- readRDS("~/Desktop/Data/code review/annotation.rds")
+annotation <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/annotation.rds")
 
 ```
 
@@ -82,7 +82,8 @@ saveRDS(dds_analysis_rlog, "/Users/melinaklostermann/Documents/projects/PURA/Mol
 res_RNAseq_kd <- results(dds_analysis, contrast = c("condition", "kd", "wt"))%>% as.data.frame()
 res_RNAseq_kd$gene_id <- rownames(res_RNAseq_kd)
 
-
+# remove rows with counting info
+res_RNAseq_kd <- res_RNAseq_kd %>% filter(!(gene_id %in% c("__no_feature", "__ambiguous", "__too_low_aQual" , "__not_aligned"  ,"__alignment_not" )))
 
 ```
 
@@ -121,11 +122,11 @@ res_RNAseq_kd <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molit
 # significantly changing
 p_cut <- 0.01
 
-length(unique(res_RNAseq_kd[res_RNAseq_kd$padj < p_cut,]$gene_id))
+length(unique(res_RNAseq_kd[which(res_RNAseq_kd$padj < p_cut),]$gene_id))
 
 ggplot(res_RNAseq_kd, aes(x=log2FoldChange, y=-log10(padj)))+
   ggrastr::rasterise( geom_point(color ="grey", shape =1), dpi = 300)+
-   ggrastr::rasterise(geom_point(data = res_RNAseq_kd[(res_RNAseq_kd$padj< p_cut), ],
+   ggrastr::rasterise(geom_point(data = res_RNAseq_kd[which(res_RNAseq_kd$padj< p_cut), ],
               aes(x= log2FoldChange, y = (-log10(padj)))), dpi = 300)+
    geom_point(data = res_RNAseq_kd[res_RNAseq_kd$hgnc_symbol%in% c("CTNNA1", "SQSTM1", "LSM14A", "CUX1", "DDX6", "GAPDH", "PURA", "PURB", "STARD7", "IL6ST", "DCP1A"),],
               aes(x= log2FoldChange, y = -log10(padj)), color = "orange")+
@@ -216,15 +217,9 @@ saveRDS(rnaseq_counts, paste0(output_path, "rnaseq_counts.rds") )
 reactome_geneset <- msigdb_gsets("Homo sapiens", "C2", "CP:REACTOME")
 cell_comp_geneset <- msigdb_gsets("Homo sapiens", "C5", "CC")
 
-# RNAseq sig
-####################################
-# since there are NA in the pajd
-# res_RNAseq_kd[res_RNAseq_kd$padj < p_cut & res_RNAseq_kd$log2FoldChange < 0,] outputs a lot of rows with the NA. I the NA rows can be remove with 
-# res_RNAseq_kd[which(res_RNAseq_kd$padj < p_cut & res_RNAseq_kd$log2FoldChange < 0),] 
-# I think this did not influence the final result for the GO but I think it would be good to check whether this is a problem for other analysis ; )
 
-res_sig_kd_list<- list( down = res_RNAseq_kd[res_RNAseq_kd$padj < p_cut & res_RNAseq_kd$log2FoldChange < 0,],
-                  up = res_RNAseq_kd[res_RNAseq_kd$padj < p_cut  & res_RNAseq_kd$log2FoldChange > 0,])
+res_sig_kd_list<- list( down = res_RNAseq_kd[which(res_RNAseq_kd$padj < p_cut & res_RNAseq_kd$log2FoldChange < 0),],
+                  up = res_RNAseq_kd[which(res_RNAseq_kd$padj < p_cut  & res_RNAseq_kd$log2FoldChange > 0),])
 
 bg = res_RNAseq_kd[res_RNAseq_kd$baseMean>0,]$hgnc_symbol
 
@@ -244,12 +239,12 @@ title_list <- c("Reactome: RNAseq PURA kd sig down",
 # customise reactome for paper
 #########################
 
-r_down = hyps_list[[1]]$data %>% mutate(group = "down", padj = p.adjust(pval))
-r_up = hyps_list[[2]]$data %>% mutate(group = "up",  padj = p.adjust(pval))
+r_down = hyps_list[[1]]$data %>% mutate(group = "down")
+r_up = hyps_list[[2]]$data %>% mutate(group = "up")
 
-reactome_go_cust <- rbind(r_down, r_up) %>% arrange(padj) %>% mutate(label = tolower(label), generatio = overlap/geneset)
+reactome_go_cust <- rbind(r_down, r_up) %>% arrange(fdr) %>% mutate(label = tolower(label), generatio = overlap/geneset)
 reactome_go_cust_print <- reactome_go_cust %>% as.data.frame()
-#xlsx::write.xlsx(reactome_go_cust_print, file =  paste0(output_path, "reactome_rnaseq_table.xlsx"))
+xlsx::write.xlsx(reactome_go_cust_print, file =  paste0(output_path, "reactome_rnaseq_table.xlsx"))
 
 reactome_go_cust <- reactome_go_cust[reactome_go_cust$label %in% reactome_go_cust[1:20,]$label, ]
 
@@ -262,19 +257,19 @@ ggplot(reactome_go_cust, aes(y = generatio, x = factor(label, level = rev(unique
   facet_wrap(~group)+
   scale_size(range = c(1, 3))
 
-#ggsave(paste0(output_path, Sys.Date(), "reactome_rnaseq_paper.pdf"), width = 17, height = 8, units = "cm")
+ggsave(paste0(output_path, Sys.Date(), "reactome_rnaseq_paper.pdf"), width = 17, height = 8, units = "cm")
 
 
 ##########################
 # customise cellular components for paper
 #########################
 
-cc_down = hyps_list[[3]]$data %>% mutate(group = "down", padj = p.adjust(pval))
-cc_up = hyps_list[[4]]$data %>% mutate(group = "up",  padj = p.adjust(pval))
+cc_down = hyps_list[[3]]$data %>% mutate(group = "down")
+cc_up = hyps_list[[4]]$data %>% mutate(group = "up")
 
-cc_go_cust <- rbind(cc_down, cc_up) %>% arrange(padj) %>% mutate(label = tolower(label), generatio = overlap/geneset)
+cc_go_cust <- rbind(cc_down, cc_up) %>% arrange(fdr) %>% mutate(label = tolower(label), generatio = overlap/geneset)
 cc_go_cust_print <- cc_go_cust %>% as.data.frame()
-#xlsx::write.xlsx(cc_go_cust_print, file =  paste0(output_path, "cc_rnaseq_table.xlsx"))
+xlsx::write.xlsx(cc_go_cust_print, file =  paste0(output_path, "cc_rnaseq_table.xlsx"))
 
 cc_go_cust <- cc_go_cust[cc_go_cust$label %in% cc_go_cust[1:20,]$label, ]
 
@@ -287,7 +282,7 @@ ggplot(cc_go_cust, aes(y = generatio, x = factor(label, level = rev(unique(label
   facet_wrap(~group)+
   scale_size(range = c(1, 3))
 
-#ggsave(paste0(output_path, Sys.Date(), "cc_rnaseq_paper.pdf"), width = 17, height = 8, units = "cm")
+ggsave(paste0(output_path, Sys.Date(), "cc_rnaseq_paper.pdf"), width = 17, height = 8, units = "cm")
 
 ```
 
