@@ -6,6 +6,7 @@ output:
   BiocStyle::html_document:
     toc_float: TRUE
     toc: TRUE
+
 ---
 
 ```{r setup, include=FALSE}
@@ -38,6 +39,8 @@ library(biomaRt)
 
 report_color <- (pals::ocean.solar(15))
 source("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/XX-helpful-chunks/theme_paper.R")
+
+outpath <- "/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/"
 ```
 
 
@@ -261,8 +264,6 @@ binding_sites_center_PS$score <- pureclip_sites[subjectHits(findOverlaps(
 ###########################
 # Keep only BS with max PureCLIP site at center
 ##########################
-# get bw rles
-
 
 # split BS by strand
 binding_sites_center_PS_plus <- binding_sites_center_PS[strand(binding_sites_center_PS)=="+"]
@@ -278,9 +279,9 @@ max_BS_minus <- apply(binding_sites_center_PS_minus_m,1,max)
 
 
 binding_sites_center_PSmax_plus <- binding_sites_center_PS_plus[
-  max_BS_plus == binding_sites_center_PS_plus_m[,((wbs-1)/2)]] 
+  max_BS_plus == binding_sites_center_PS_plus_m[,((wbs+1)/2)]] 
 binding_sites_center_PSmax_minus <- binding_sites_center_PS_minus[
-  max_BS_minus == binding_sites_center_PS_minus_m[,((wbs-1)/2)]]
+  max_BS_minus == binding_sites_center_PS_minus_m[,((wbs+1)/2)]]
 
 
 
@@ -306,7 +307,7 @@ binding_sites_final <- c(binding_sites_center_PSmax_plus_2cl , binding_sites_cen
 
 # Sample reproducibility
 
-```{r}
+```{r fig.width=10, fig.height= 5}
 
 # sum up cl events per binding site 
 bs.p = binding_sites_final[strand(binding_sites_final) == "+"]
@@ -388,8 +389,11 @@ cor_fun <- function(data, mapping, method="pearson", ndp=2, sz=3, stars=T, ...){
 }
 
 
-GGally::ggpairs(repro_scatter_df, upper = list(continuous = cor_fun), lower = list(continuous = scatter_fn), title = "Reproducability matrix - comparisons of 2 samples")+
+GGally::ggpairs(repro_scatter_df, upper = list(continuous = cor_fun), lower = list(continuous = scatter_fn))+
   theme_bw()
+
+ggsave(filename = paste0(outpath, "repro_scatter_tpm.pdf"), width = 8, height = 8, units = "cm")
+
 
 ```
 

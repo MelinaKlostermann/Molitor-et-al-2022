@@ -108,6 +108,14 @@ res_RNAseq_kd$gene_id <- substring(rownames(res_RNAseq_kd),1,15)
 idx_biomart_new <- match(res_RNAseq_kd$gene_id, info_biomart_new$ensembl_gene_id)
 res_RNAseq_kd <- cbind(res_RNAseq_kd, info_biomart_new[idx_biomart_new,])
 
+# res_RNAseq[which(duplicated(res_RNAseq$hgnc_symbol, incomparables = c(NA, ""))),]
+# 
+# res_RNAseq_t <- res_RNAseq %>% filter(!is.na(hgnc_symbol))%>%
+#   filter(hgnc_symbol != "") %>%
+#   group_by(hgnc_symbol) %>%
+#   arrange(baseMean) %>%
+#   slice(1) %>%
+#   ungroup(.)
 
 saveRDS(res_RNAseq_kd, "/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/deseq.rds")
 
@@ -177,7 +185,7 @@ anno_txdb <- makeTxDbFromGRanges(annotation)
 transcript_length <- transcriptLengths(anno_txdb, with.cds_len = T)
 transcript_length_mean <- transcript_length %>%
   dplyr::group_by(gene_id) %>%
-  summarise(transcript_length = mean(tx_len), .groups = "keep")
+  summarise(transcript_length = mean(tx_len, na.rm = T), .groups = "keep")
 transcript_length_mean$gene_id <- substr(transcript_length_mean$gene_id,1,15)
 
 # tpm for all samples
@@ -186,9 +194,7 @@ rnaseq_counts <- rnaseq_counts %>% left_join(transcript_length_mean, by = "gene_
     s1.rnaseq.tpm = wt1 / .$transcript_length,
     s2.rnaseq.tpm = wt2 / .$transcript_length,
     s3.rnaseq.tpm = wt3 / .$transcript_length,
-    s4.rnaseq.tpm = wt4 / .$transcript_length,
-
-    )
+    s4.rnaseq.tpm = wt4 / .$transcript_length)
 
 
 # scaling factor values for samples 

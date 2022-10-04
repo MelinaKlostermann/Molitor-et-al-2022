@@ -238,9 +238,6 @@ pb_transcriptome <- mutate(pb_transcriptome, l2fc = as.numeric(`RNA enrichment i
 sg_transcriptome <- sg_transcriptome %>% mutate(l2fc = log2(`Fold change`))
 
 
-### TODO MK
-### Why do you have NAs in tpms$mean_tpm_rnaseq?
-
 # get pb_transcriptome and sg_transcriptome tpms from our HeLa RNAseq
 tpms <- rnaseq_counts[, c("gene_id", "mean_tpm_rnaseq")]
 tpms <- filter(tpms, mean_tpm_rnaseq > 0)
@@ -487,6 +484,24 @@ pb_info <- pb_transcriptome_expr[, c("Ensembl Gene ID", "l2fc", "pfdr")]
 colnames(pb_info) <- c("gene_id", "l2fc.pb", "fdr.pb")
 pb_info_2  <- pb_info %>% filter(l2fc.pb >0 , fdr.pb < 0.01 )
 
+# add PURA kd full
+granules <- pb_info %>% 
+  left_join(.,res_RNAseq, by = c(gene_id = "ensembl_gene_id")) %>%
+  mutate(granule = case_when((l2fc.pb > 0 & fdr.pb < 0.01)  ~ "pb",
+                             T ~ "no_granule"))
+
+
+#plot
+ggplot(granules, aes(x = granule, y = log2FoldChange))+
+  geom_violin()+
+  geom_boxplot(width=0.2)+
+   gg_n +
+  geom_hline(yintercept = 0)+
+  theme_paper()+
+    stat_compare_means()
+  # ggtitle("PURA kd changes in differnet granules", subtitle = "neg set all RNAs detected sg or pb experiments")
+
+ggsave(paste0(outpath, "violin_pb_vs_not.pdf"), width = 4 , height  = 6, units = "cm")
 
 # add PURA kd full
 granules_2 <- full_join(sg_info, pb_info, by = "gene_id") %>% 
@@ -507,6 +522,8 @@ ggplot(granules_2, aes(x = granule, y = log2FoldChange))+
   theme_paper()+
     stat_compare_means(comparisons = my_comparisons)+
   ggtitle("PURA kd changes in differnet granules", subtitle = "neg set all RNAs detected sg or pb experiments")
+
+ggsave(paste0(outpath, "violin_pb_vs_not.pdf"), width = 4 , height  = 5, units = "cm")
 
 
 ```

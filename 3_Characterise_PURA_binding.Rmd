@@ -116,6 +116,8 @@ table(binding_sites_temp2$gene_type)
 # non coding rnas "fake" region non coding
 bs_temp_non_cod <- binding_sites_temp2[binding_sites_temp2$gene_type!= "protein_coding",] %>% makeGRangesFromDataFrame(., keep.extra.columns = T)
 bs_temp_non_cod$type <- "non_coding"
+
+
 ```
 
 ## Binding site region by hiercary approach
@@ -220,6 +222,8 @@ ggsave(paste0(outpath, "gene_regions.pdf"), width = 5 , height  = 5, units = "cm
 table(binding_sites_with_regions$region)
 table(binding_sites_with_regions[!duplicated(binding_sites_with_regions$gene_id),]$gene_type)
 
+NROW(binding_sites_with_regions[which(!duplicated(binding_sites_with_regions$gene_id)),])
+
 # clean up unnecessary columns
 colnames(elementMetadata(binding_sites_with_regions)) <- c(colnames(elementMetadata(binding_sites_with_regions))[1:10], "region", "")
 elementMetadata(binding_sites_with_regions) <- elementMetadata(binding_sites_with_regions)[c(1:11)]
@@ -277,11 +281,13 @@ ggplot(norm_regions, aes(x=region, y = norm_binding_per_reg_size))+
   geom_col()+
   theme_paper()
 
+ggsave(paste0(outpath, "gene_regions_norm.pdf"), width = 5 , height  = 5, units = "cm")
+
 ```
 
 ## Strongest binding site per gene
  
-```{r eval=FALSE, include=FALSE}
+```{r}
 # check strongest binding site per gene, to see if distribution between regions shifts
 # --> the strongest BS per gene is more often in the 3'UTR
 strongest_BS <- binding_sites_with_regions %>%
@@ -440,7 +446,7 @@ ggplot(binding_sites_with_regions, aes(x = log10(mean_tpm_rnaseq), log10(mean.cl
   stat_cor()+
   theme_paper()
   
-#ggsave(filename = paste0(output_path, "/tpm_comp.pdf"), width = 7, height = 5, units = "cm")
+ggsave(filename = paste0(outpath, "tpm_comp.pdf"), width = 7, height = 5, units = "cm")
 
 
 ```
@@ -477,6 +483,8 @@ ggplot(RNA_tpm_cutoffs_bound, aes(x = as.factor(tpm_cut), y = ratio_bound, label
   ylim(0,1)+
   theme_paper()
 
+ggsave(filename = paste0(outpath, "binding_vs_tpm.pdf"), width = 5, height = 5, units = "cm")
+
 ```
 
 
@@ -511,6 +519,7 @@ ggplot(n_BS_per_gene, aes(x=n_BS_plot))+
   xlab("Number of binding sites per gene")+
   ylab("Number of genes")
 
+ggsave(filename = paste0(outpath, "bs_per_gene_distribution.pdf"), width = 8, height = 5, units = "cm")
 
 ```
 
@@ -530,9 +539,11 @@ ggplot(n_BS_per_gene_tpm, aes(x=mean_tpm_rnaseq, y = n_BS))+
   geom_point()+
   #ggforce::facet_zoom(xlim=c(0,1500))+
   #geom_hline(yintercept = 25, color ="red")+
-  geom_smooth()+
+  #geom_smooth()+
   ylab("Number of binding sites per gene")+
   xlab("Gene expression [tpm]")+
+  ylim(c(0,300))+
+  scale_x_log10()+
   theme_paper()
 
 
@@ -544,16 +555,17 @@ median_per_bin <- n_BS_per_gene_tpm %>% group_by(bin) %>%
 
 ggplot(n_BS_per_gene_tpm, aes(x=as.factor(bin), y = n_BS))+
   # gghalves::geom_half_boxplot(outlier.size = -5, lwd = 0.5) +
-  ggrastr::rasterize(geom_jitter(), dpi = 400)+
-  geom_point(data = median_per_bin, aes(x = bin, y = median ), color = "red")+
+  geom_boxplot()+
+  #geom_point(data = median_per_bin, aes(x = bin, y = median ), color = "red")+
   theme_paper()+
   ylab("Number of binding sites per gene")+
   xlab("Binned gene expression [tpm]")+
+  ylim(c(0,250))+
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
 
-#ggsave(paste0(outpath,"tpm_vs_BS_per_gene.pdf"), height = 6, width = 7, units = "cm")
+ggsave(paste0(outpath,"tpm_vs_BS_per_gene.pdf"), height = 6, width = 7, units = "cm")
 
-# TODO which figure for paper?
+
 ```
 
 

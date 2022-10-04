@@ -24,6 +24,7 @@ library(purrr)
 
 report_color <- (pals::ocean.solar(15))
 source("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/XX-helpful-chunks/theme_paper.R")
+outpath <- "/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/"
 ```
 
 # What was done?
@@ -107,20 +108,28 @@ plot_box_all <- ggplot(res_RNAseq_CLIP, aes(x=CLIP_bound, y=log2FoldChange, fill
                vjust=-1.3, hjust=-0.3, aes(label=round(..y.., digits=3)))+
   theme_paper()+
   scale_fill_manual(values= c("darkred", "grey"), name = "iClip Hit")+ 
-  geom_hline(yintercept = 0)
+  geom_hline(yintercept = 0)+
+  theme(legend.position = "None")
 
 plot_box_all
-#save(plot_box_all, file="/Users/melinaklostermann/Documents/PURA_oe_newpip/PURA_newpip/Report13-output/box_all.pdf")
+ggsave(plot_box_all, file=paste0(outpath,"rnaseq_clip_box_all.pdf"), width = 4, height = 4, units = "cm")
+
+
 
 # boxplot regions 
-plot_box_region <- ggplot(res_RNAseq_CLIP[(res_RNAseq_CLIP$padj > 0.01),], aes(x=region, y=log2FoldChange, fill = region))+
+
+res_RNAseq_CLIP$region <- factor(res_RNAseq_CLIP$region, levels = c("three_prime_UTR", "five_prime_UTR", "CDS", "non_coding"))
+plot_box_region <- ggplot(res_RNAseq_CLIP, aes(x=region, y=log2FoldChange, fill = region, levels))+
   geom_boxplot()+
   theme_paper()+
-  scale_fill_manual(values= c("#2AB7CA", "darkred","orange", "purple", "grey"), name = "iClip Hit")+ 
-  geom_hline(yintercept = 0)
+  scale_fill_manual(values= c( "darkred","orange", "#2AB7CA","purple", "darkgreen"), name = "iClip Hit")+ 
+  geom_hline(yintercept = 0)+
+  theme(legend.position = "None")
 
 plot_box_region
+ggsave(plot_box_region, file=paste0(outpath,"rnaseq_clip_box_region.pdf"), width = 4, height = 4, units = "cm")
 
+table(res_RNAseq_CLIP$region)
 ```
 
 # Color vulcano by bound region
@@ -140,7 +149,7 @@ ggplot()+
   ylim(c(0,40))+
   theme_paper()
 
-#ggsave(paste0(output_path, "vulcano_3UTR.pdf"), width = 5, height = 5, units = "cm")
+ggsave(paste0(outpath, "rnaseq_vulcano_3UTR.pdf"), width = 4, height = 4, units = "cm")
 
 
 # 5'UTR
@@ -153,7 +162,7 @@ ggplot()+
   ylim(c(0,40))+
   theme_paper()
 
-#ggsave(paste0(output_path, "vulcano_5UTR.pdf"), width = 5, height = 5, units = "cm")
+ggsave(paste0(outpath, "rnaseq_vulcano_5UTR.pdf"), width = 4, height = 4, units = "cm")
 
 # CDS
 ggplot()+
@@ -165,19 +174,19 @@ ggplot()+
   ylim(c(0,40))+
   theme_paper()
 
-#ggsave(paste0(output_path, "vulcano_CDS.pdf"), width = 5, height = 5, units = "cm")
+ggsave(paste0(outpath, "rnaseq_vulcano_CDS.pdf"), width = 4, height = 4, units = "cm")
 
 # non coding
 ggplot()+
   ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==F,],  aes(x=log2FoldChange, y= -log10(padj)), color = "grey", shape = 1,  size = 0.5), dpi = 300)+
   ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==T,], aes(x=log2FoldChange, y= -log10(padj)), size = 0.5), dpi = 300)+
-  ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==T & res_RNAseq_CLIP$region =="no_region",], aes(x=log2FoldChange, y= -log10(padj)), color = "purple",  size = 0.5), dpi = 300)+
+  ggrastr::rasterise(geom_point(data = res_RNAseq_CLIP[res_RNAseq_CLIP$sig.change ==T & res_RNAseq_CLIP$region =="non_coding",], aes(x=log2FoldChange, y= -log10(padj)), color = "purple",  size = 0.5), dpi = 300)+
   theme_bw()+
   xlim(c(-2,2))+
   ylim(c(0,40))+
   theme_paper()
 
-#ggsave(paste0(output_path, "vulcano_non_cod.pdf"), width = 5, height = 5, units = "cm")
+ggsave(paste0(outpath, "rnaseq_vulcano_non_cod.pdf"), width = 4, height = 4, units = "cm")
 
 # intron
 ggplot()+
@@ -189,7 +198,7 @@ ggplot()+
   ylim(c(0,40))+
   theme_paper()
 
-#ggsave(paste0(output_path, "vulcano_intron.pdf"), width = 5, height = 5, units = "cm")
+ggsave(paste0(outpath, "rnaseq_vulcano_intron.pdf"), width = 4, height = 4, units = "cm")
 
 # unbound
 
@@ -203,7 +212,7 @@ ggplot()+
   ylim(c(0,40))+
   theme_paper()
 
-#ggsave(paste0(output_path, "vulcano_unbound.pdf"), width = 5, height = 5, units = "cm")
+ggsave(paste0(outpath, "rnaseq_vulcano_unbound.pdf"), width = 4, height = 4, units = "cm")
 
 
 

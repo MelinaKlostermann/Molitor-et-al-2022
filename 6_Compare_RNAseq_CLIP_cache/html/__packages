@@ -1,0 +1,16 @@
+BiocStyle
+knitr
+BiocGenerics
+S4Vectors
+IRanges
+GenomeInfoDb
+GenomicRanges
+dplyr
+ggplot2
+ggpubr
+matrixStats
+MatrixGenerics
+Biobase
+SummarizedExperiment
+DESeq2
+purrr

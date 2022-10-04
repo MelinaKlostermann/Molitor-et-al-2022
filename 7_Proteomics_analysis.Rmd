@@ -46,7 +46,7 @@ outpath <- "/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/
 # Input
 
 ```{r}
-# maxquant idnetification of proteins
+# maxquant identification of proteins
 maxquant_table <- readxl::read_excel("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/04-BioID-SILAC/03-Proteomics/XX_reprocessed_data/MOL13920_wo-repl3_MQ1670_withMBR_proteinGroups_LFQ1_matching.xlsx")
 
 # binding sites
@@ -79,28 +79,40 @@ maxquant_table <- maxquant_table[!duplicated(maxquant_table$gene_name),]
 - some genes are listed with multiple major protein id but only one gene id
 - there are two different reasons for this: 
  1. Genes with alternative gene_names like CUX1 also called CASP get two protein ids
- 2. multiple genes are grouped togeter because of their sequence similarity
+ 2. multiple genes are grouped togheter because of their sequence similarity
 - the goal is to keep 1. but discard 2.
 - for this alternative gene names are taken from ensemble and compared to the protein ids
+ 
+```{r}
+# split up mutiple ids into separate columns
+maxquant_table <- maxquant_table %>% separate(`Majority protein IDs`, sep = ";", into = c("protein_ID1", "protein_ID2", "protein_ID3"), remove = F) %>%
+  rowwise(.) %>% 
+  mutate(across(c("protein_ID1", "protein_ID2", "protein_ID3"), 
+                ~unlist(strsplit(.x, split = "\\|"))[2] ))
+
+
+
+```
+ 
  
 ```{r eval=FALSE, include=T}
 ##########################
 # get alternative gene names from ensemble
 #########################
 
-#get names
+
 ensembl38p13 <- useMart(biomart='ENSEMBL_MART_ENSEMBL',
                         dataset='hsapiens_gene_ensembl')
 
-my_attributes <- c("ensembl_gene_id", "hgnc_symbol", "external_synonym", "uniprot_isoform", "protein_id", "ensembl_peptide_id")
+my_attributes <- c( "hgnc_symbol", "external_synonym", "protein_id", "uniprot_gn_id")
 
-info_biomart_new<- getBM(attributes=my_attributes,
-                        filters = "hgnc_symbol",
-                        values = maxquant_table$gene_name,
+info_biomart_new <- getBM(attributes=my_attributes,
+                        filters = "uniprot_gn_id",
+                        values = maxquant_table$protein_ID1,
                         mart = ensembl38p13, useCache = F)
 
 #combine
-idx_biomart_new <- match(maxquant_table$gene_name, info_biomart_new$hgnc_symbol)
+idx_biomart_new <- match(maxquant_table$protein_ID1, info_biomart_new$uniprot_gn_id)
 maxquant_table <- cbind(maxquant_table, info_biomart_new[idx_biomart_new,])
 
 #save
@@ -148,7 +160,10 @@ cux1$`Majority protein IDs` <- cux1$ID1
 unique_protein_ids <- maxquant_table[!grepl(pattern = ";", maxquant_table$`Majority protein IDs`),]
 cux1 <- cux1[,(colnames(cux1 ) %in% colnames(unique_protein_ids))]
 maxquant_table  <- rbind(unique_protein_ids , cux1)
- 
+
+
+# non unique gene names of proteins?
+
 ```
 
 ## Excluding to high fallout rates
@@ -157,10 +172,12 @@ maxquant_table  <- rbind(unique_protein_ids , cux1)
 
 ```{r}
 
-LFQs <- maxquant_table[,c(grepl(pattern = "LFQ", colnames(maxquant_table))|
-                                                         grepl(pattern = "gene_name", colnames(maxquant_table)))] %>%
+LFQs <- maxquant_table[,c(
+  grepl(pattern = "LFQ", colnames(maxquant_table))|
+    grepl(pattern = "gene_name", colnames(maxquant_table)) |
+    grepl(pattern = "ensembl_gene_id", colnames(maxquant_table)) )] %>%
                as.data.frame()    
-colnames(LFQs) <- c("gene_name", "kd1", "kd2", "kd3", "kd4", "wt1", "wt2", "wt3", "wt4")
+colnames(LFQs) <- c("gene_name", "kd1", "kd2", "kd3", "kd4", "wt1", "wt2", "wt3", "wt4", "ensembl_gene_id")
 
 # sum fall outs
 LFQs[LFQs==0] = NA
@@ -282,7 +299,26 @@ LFQ_4_zeros_d <- LFQ_4_zeros[,c("gene_name", "na_wt", "na_kd")] %>%
 
 
 proteomics_deqms <- rbind(deqms, LFQ_4_zeros_d[, c(4:14, 1)])
+LFQ_4_zeros_mat <- LFQ_4_zeros[,c("kd1", "kd2", "kd3", "kd4", "wt1", "wt2", "wt3", "wt4")]
 
+rownames(LFQ_4_zeros_mat)<- LFQ_4_zeros$gene_name
+protein.matrix <- rbind(protein.matrix, LFQ_4_zeros_mat)
+
+# remove duplicated gene ids by choosing the stronger changing protein
+proteomics_deqms <- left_join(proteomics_deqms, dplyr::select(maxquant_table, gene_name, ensembl_gene_id), by = c(gene_name = "gene_name"))
+
+# proteomics_deqms <- proteomics_deqms %>%
+#    group_by(ensembl_gene_id) %>%
+#   arrange(desc(logFC), .by_group = T) %>%
+#   dplyr::slice(1) %>%
+#   ungroup(.) %>%
+#   filter(!is.na(ensembl_gene_id))
+# 
+
+
+
+# save diff analysis result
+#saveRDS(proteomics_deqms, paste0(outpath, "proteomics_deqms.rds"))
 ```
 ## Vulcano proteomics
 
@@ -290,11 +326,13 @@ proteomics_deqms <- rbind(deqms, LFQ_4_zeros_d[, c(4:14, 1)])
 
 ggplot(proteomics_deqms, aes(x = logFC, y = (-log10(sca.adj.pval))))+
    geom_point(color ="grey", shape =1)+
+  # significant targets black
    geom_point(data = proteomics_deqms[(proteomics_deqms$sca.adj.pval< 0.05) & (abs(proteomics_deqms$logFC) > log(0.5)), ],
               aes(x= logFC, y = (-log10(sca.adj.pval))))+
-   geom_point(data = proteomics_deqms[proteomics_deqms$gene_name %in% c("CTNNA1", "SQSTM1", "LSM14A", "CUX1", "DDX6", "GAPDH", "PURA", "PURB", "STARD7", "IL6ST", "DCP1A"),],
+  # label and color proteins of interest
+   geom_point(data = proteomics_deqms[proteomics_deqms$gene_name %in% c("CTNNA1", "SQSTM1", "LSM14A", "CUX1", "DDX6", "GAPDH", "PURA", "PURB", "STARD7", "IL6ST"),],
               aes(x= logFC, y = -log10(sca.adj.pval)), color = "orange")+
-  ggrepel::geom_label_repel( data = proteomics_deqms[proteomics_deqms$gene_name %in% c("CTNNA1", "SQSTM1", "LSM14A", "CUX1", "DDX6", "GAPDH", "PURA", "PURB", "STARD7", "IL6ST", "DCP1A"),],
+  ggrepel::geom_label_repel( data = proteomics_deqms[proteomics_deqms$gene_name %in% c("CTNNA1", "SQSTM1", "LSM14A", "CUX1", "DDX6", "GAPDH", "PURA", "PURB", "STARD7", "IL6ST"),],
                              aes( x = logFC,  y = (-log10(sca.adj.pval)), label = gene_name), max.overlaps = 10)+
    xlab("Protein fold change (kd/wt) [log2]")+
    ylab("adj. p-value (protein fold change)")+
@@ -302,7 +340,7 @@ ggplot(proteomics_deqms, aes(x = logFC, y = (-log10(sca.adj.pval))))+
    theme(legend.position = "none", aspect.ratio = 1/1)+
   xlim(c(-3,3))
 
-# ggsave(paste0(outpath, "prot_vulcano_paper.pdf"), width = 6, height = 6, units = "cm")
+ ggsave(paste0(outpath, "prot_vulcano_paper.pdf"), width = 6, height = 6, units = "cm")
 
 
 
@@ -438,14 +476,13 @@ colnames(res_RNAseq) <- paste(colnames(res_RNAseq), "rnaseq", sep = ".")
 # combine
 prot_vs_RNA <- proteomics_deqms %>% left_join(res_RNAseq, by = c(gene_name.prot = "hgnc_symbol.rnaseq"))
 
-# ! now the df sometimes contains the same protein data for more than one gene
-# keep the one with higher gene l2fc
-prot_vs_RNA  <- prot_vs_RNA  %>% group_by(gene_name.prot) %>% arrange(desc(log2FoldChange.rnaseq), .by_group = T) %>% dplyr::slice(1)
+# colnames(prot_vs_RNA)
+# prot_vs_RNA[which(duplicated(prot_vs_RNA$ensembl_gene_id.rnaseq, incomparables = NA)),]
 
 ###########################
 # scatterplot all values
 ########################
-gois = c("CTNNA1", "SQSTM1", "LSM14A", "CUX1", "DDX6", "GAPDH", "PURA", "PURB", "STARD7", "IL6ST", "DCP1A")
+gois = c("CTNNA1", "SQSTM1", "LSM14A", "CUX1", "DDX6", "GAPDH", "PURA", "PURB", "STARD7", "IL6ST")
 gg_df <- prot_vs_RNA %>%
   rowwise() %>%
   mutate(plot = case_when(
@@ -481,7 +518,7 @@ ggplot(gg_df %>% dplyr::filter(., plot == "no"),  aes(x = logFC.prot, y= log2Fol
   ylim(c(-3, 3))+ 
   theme(legend.position = "none", aspect.ratio = 1/1)
 
- #ggsave(paste0(outpath, "prot_vs_rna_paper.pdf"), width = 6, height = 6, units = "cm")
+ ggsave(paste0(outpath, "prot_vs_rna_paper.pdf"), width = 6, height = 6, units = "cm")
  
  #prot_vs_RNA %>% filter(baseMean.rnaseq >0)
 
@@ -492,11 +529,11 @@ ggplot(gg_df %>% dplyr::filter(., plot == "no"),  aes(x = logFC.prot, y= log2Fol
 ```{r venn_rnaseq_proteomics}
 
 # get all gene_ids
-up_pro <- prot_vs_RNA %>% filter(., logFC.prot > 0 & sca.adj.pval.prot < p_cut_prot) %>% .$gene_id.rnaseq %>% unique() %>% na.omit()
-down_pro <- prot_vs_RNA %>% filter(., logFC.prot < 0 & sca.adj.pval.prot < p_cut_prot) %>% .$gene_id.rnaseq%>% unique() %>% na.omit()
+up_pro <- prot_vs_RNA %>% filter(., logFC.prot > 0 & sca.adj.pval.prot < p_cut_prot) %>% .$ensembl_gene_id.prot %>% na.omit()
+down_pro <- prot_vs_RNA %>% filter(., logFC.prot < 0 & sca.adj.pval.prot < p_cut_prot) %>% .$ensembl_gene_id.prot  %>% na.omit()
 
-up_RNA <- res_RNAseq %>% filter(., log2FoldChange.rnaseq > 0 & padj.rnaseq < p_cut_rna ) %>% .$gene_id.rnaseq %>% unique() %>% na.omit()
-down_RNA <-  res_RNAseq %>% filter(., log2FoldChange.rnaseq < 0 & padj.rnaseq < p_cut_rna ) %>% .$gene_id.rnaseq %>% unique() %>% na.omit()
+up_RNA <- res_RNAseq %>% filter(., log2FoldChange.rnaseq > 0 & padj.rnaseq < p_cut_rna ) %>% .$gene_id.rnaseq   %>% na.omit()
+down_RNA <-  res_RNAseq %>% filter(., log2FoldChange.rnaseq < 0 & padj.rnaseq < p_cut_rna ) %>% .$gene_id.rnaseq  %>% na.omit()
 
 # make one list of targets
 all_targets <- c(up_pro, down_pro, up_RNA, down_RNA) %>% unique() %>% na.omit()
@@ -562,18 +599,24 @@ BS_strongest_per_gene <- as.data.frame(BS) %>% group_by(gene_id) %>%
   ungroup(.)
 
 
+prot_vs_RNA_BS <- left_join(prot_vs_RNA, BS_strongest_per_gene[c("seqnames", "start", "end", "width", "strand", "gene_name", "score", "region")], by =
+                              c(gene_name.prot= "gene_name")) %>%
+  group_by("gene_name") %>%
+  ungroup(.) %>% as.data.frame(.) %>%
+    filter(!duplicated(ensembl_gene_id.rnaseq))
 
-prot_vs_RNA_BS <- left_join(prot_vs_RNA, BS_strongest_per_gene[c("seqnames", "start", "end", "width", "strand", "gene_id", "score", "region")], by =
-                              c(gene_id.rnaseq= "gene_id")) %>% ungroup(.) %>% as.data.frame(.)
+prot_vs_RNA_BS_gg <- prot_vs_RNA_BS %>% mutate(., bound = case_when( !is.na(region) ~ "PURA-bound",  T ~ "Not bound")) 
 
-prot_vs_RNA_BS_gg <- prot_vs_RNA_BS %>% mutate(., bound = case_when( !is.na(region) ~ "PURA-bound",
-                                                                  T ~ "Not bound")) 
+table(prot_vs_RNA_BS[which(prot_vs_RNA_BS$sca.adj.pval.prot < p_cut_prot), ]$region)
+
+prot_vs_RNA_BS %>% filter(sca.adj.pval.prot < p_cut_prot & region == "five_prime_UTR")
 
 
 # color vulcano by regions
 ggplot(prot_vs_RNA_BS_gg, aes(y = -log10(sca.adj.pval.prot), x = logFC.prot))+
-  geom_point(data=dplyr::select(prot_vs_RNA_BS_gg, -region), aes(y = -log10(sca.adj.pval.prot), x = logFC.prot))+
-  geom_point(aes(color = region))+
+  geom_point(data = filter(prot_vs_RNA_BS_gg, sca.adj.pval.prot >= 0.01), color = "grey", shape = 1,  size = 0.5)+
+  geom_point(data=dplyr::select(dplyr::filter(prot_vs_RNA_BS_gg, sca.adj.pval.prot < p_cut_prot), -region), aes(y = -log10(sca.adj.pval.prot), x = logFC.prot), size = 0.5)+
+  geom_point(data = dplyr::filter(prot_vs_RNA_BS_gg, sca.adj.pval.prot < p_cut_prot), aes(color = region), size = 0.5)+
   xlim(c(-3,3))+
   scale_color_manual(values = c("darkred", "orange", "#2AB7CA", "blue", "purple", "darkgreen"))+
   facet_wrap(~region,scales='free') + 
@@ -594,6 +637,7 @@ ggplot(prot_vs_RNA_BS_gg, aes(x = region, y = logFC.prot, fill = region))+
   theme_paper()+
   theme(legend.position = "None")
 
+
 ggsave(paste0(outpath, "boxplot_prot_binding_region.pdf"), height = 4, width = 4, units = "cm")
 
 
@@ -602,7 +646,6 @@ prot_vs_RNA_BS_gg$bound = factor(prot_vs_RNA_BS_gg$bound, levels = c("PURA-bound
 
 ggplot(prot_vs_RNA_BS_gg, aes(x = bound, y = logFC.prot, fill = bound))+
   geom_boxplot()+
-  #scale_fill_manual(values = c("darkred", "orange", "#2AB7CA", "blue", "purple", "darkgreen"))+
   geom_hline(yintercept = 0)+
   ylim(c(-3,3))+
   theme_paper()+
@@ -625,18 +668,18 @@ ggsave(paste0(outpath, "boxplot_prot_binding.pdf"), height = 4, width = 4, units
 prot_vs_RNA_BS_sig <- prot_vs_RNA_BS %>%
   filter(sca.adj.pval.prot < p_cut_prot & padj.rnaseq < p_cut_rna) 
 
-gene_ids_list <- list(down_down = prot_vs_RNA_BS_sig %>% filter((logFC.prot < 0) & (log2FoldChange.rnaseq < 0)),
+gene_names_list <- list(down_down = prot_vs_RNA_BS_sig %>% filter((logFC.prot < 0) & (log2FoldChange.rnaseq < 0)),
                  up_up = prot_vs_RNA_BS_sig %>% filter((logFC.prot > 0) & (log2FoldChange.rnaseq > 0)),
                  up_down = prot_vs_RNA_BS_sig %>% filter((logFC.prot < 0) & (log2FoldChange.rnaseq > 0)),
                  down_up = prot_vs_RNA_BS_sig %>% filter((logFC.prot > 0) & (log2FoldChange.rnaseq < 0))
-                 ) %>% map( ~pull(.x, gene_id.rnaseq))
+                 ) %>% map( ~pull(.x, gene_name.prot))
 
 
 
-gene_names <- map(gene_ids_list, ~prot_vs_RNA_BS[prot_vs_RNA_BS$gene_id.rnaseq %in% .x, ]$gene_name.prot)
+gene_ids_list <- map(gene_names_list, ~prot_vs_RNA_BS[prot_vs_RNA_BS$gene_name.prot %in% .x, ]$ensembl_gene_id.rnaseq)
 
 gene_ids <- c(unlist(gene_ids_list))
-gene_names <- c(unlist(gene_names))
+gene_names <- c(unlist(gene_names_list))
 
 
 ########## matrix rna counts
