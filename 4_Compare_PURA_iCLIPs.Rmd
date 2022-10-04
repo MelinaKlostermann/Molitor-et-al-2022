@@ -30,6 +30,43 @@ outpath <- "/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/01-BS_
 source("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/XX-helpful-chunks/theme_paper.R")
 ```
 
+```{r}
+################################################################################
+###                       CODE REVIEW SUMMARY                                ###
+################################################################################
+### 
+### Review by:          Mirko Brüggemann
+### Comment shortcut:   MB
+### Date:               23.09.2022
+### Time spent:         ~2h
+# Main objective: 
+# Comparison of different PURA iCLIP datasets, mainly binding in NPC cells
+# 
+# Input:
+# - PURA crosslinks from the preprocessing as bw
+# - gene annotation as of gencode v31 as rds
+# - Binding sites from script 1
+# 
+# Minor tasks the script performs are: 
+# - 
+# 
+# Major/ issues:
+# - No major issues, code works as expected :) 
+#
+# Minor/ suggestions:
+# - More comments in the code this time which is nice :)
+# - Still the code is often hard to read
+#   -> multiple reassignments of values between variables within the same code junk
+#   -> input data is loaded in partly redundant lists 
+#   -> a lot of hard coded values 
+# - GVIZ functions are slow because iCLIP signal is loaded as GRanges instead of RLE
+# - calculation of iCLIP coverage over a GRanges object can be optimized by using BindingSiteFinder
+# 
+# Nice job! 
+# Feel free to review the review :) 
+#
+```
+
 
 # What is done here?
 
@@ -52,16 +89,22 @@ npc_cl_m_gr <- import.bw("/Users/melinaklostermann/Documents/projects/PURA/01_ra
 
 # crosslinks from all three HeLa iCLIPs
 hela_cl_rle <- list(endo_p = import.bw("/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_endo/imb_koenig_2020_07_koenig_iCLIP_PURA_endogene/merged/bw/imb_koenig_2020_07_PURAendo.v2uniqMD.duprm.plus.bw", as = "Rle"),
-                endo_m = import.bw("/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_endo/imb_koenig_2020_07_koenig_iCLIP_PURA_endogene/merged/bw/imb_koenig_2020_07_PURAendo.v2uniqMD.duprm.minus.bw", as = "Rle"),
-                oe_pura_p = import.bw("/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/oe-imb_koenig_2019_11_koenig_iCLIP_PURA___v2uniqMD/merged/bw/imb_koenig_2019_11_allsamples.v2uniqMD.duprm.plus.bw", as = "Rle"),
-                oe_pura_m = import.bw("/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/oe-imb_koenig_2019_11_koenig_iCLIP_PURA___v2uniqMD/merged/bw/imb_koenig_2019_11_allsamples.v2uniqMD.duprm.minus.bw", as = "Rle"),
-                oe_flag_p = import.bw("/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_NPC_and_FLAG/imb_koenig_2020_17_koenig_iCLIP_PURA/merged/bw/imb_koenig_2020_17_flag.v2uniqMD.duprm.plus.bw", as = "Rle"),
-                oe_flag_m = import.bw("/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_NPC_and_FLAG/imb_koenig_2020_17_koenig_iCLIP_PURA/merged/bw/imb_koenig_2020_17_flag.v2uniqMD.duprm.minus.bw", as = "Rle"))
+                    endo_m = import.bw("/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_endo/imb_koenig_2020_07_koenig_iCLIP_PURA_endogene/merged/bw/imb_koenig_2020_07_PURAendo.v2uniqMD.duprm.minus.bw", as = "Rle"),
+                    oe_pura_p = import.bw("/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/oe-imb_koenig_2019_11_koenig_iCLIP_PURA___v2uniqMD/merged/bw/imb_koenig_2019_11_allsamples.v2uniqMD.duprm.plus.bw", as = "Rle"),
+                    oe_pura_m = import.bw("/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/oe-imb_koenig_2019_11_koenig_iCLIP_PURA___v2uniqMD/merged/bw/imb_koenig_2019_11_allsamples.v2uniqMD.duprm.minus.bw", as = "Rle"),
+                    oe_flag_p = import.bw("/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_NPC_and_FLAG/imb_koenig_2020_17_koenig_iCLIP_PURA/merged/bw/imb_koenig_2020_17_flag.v2uniqMD.duprm.plus.bw", as = "Rle"),
+                    oe_flag_m = import.bw("/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_NPC_and_FLAG/imb_koenig_2020_17_koenig_iCLIP_PURA/merged/bw/imb_koenig_2020_17_flag.v2uniqMD.duprm.minus.bw", as = "Rle"))
 
+### TODO MB
+### this is redundant to the hela_cl_rle list
+###
 # endo HeLa crosslinks for GVIZ plots
 hela_cl <- list(endo_p = import.bw("/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_endo/imb_koenig_2020_07_koenig_iCLIP_PURA_endogene/merged/bw/imb_koenig_2020_07_PURAendo.v2uniqMD.duprm.plus.bw"),
                 endo_m = import.bw("/Users/melinaklostermann/Documents/projects/PURA/01_raw_data/PURA_endo/imb_koenig_2020_07_koenig_iCLIP_PURA_endogene/merged/bw/imb_koenig_2020_07_PURAendo.v2uniqMD.duprm.minus.bw"))
 
+### TODO MB
+### would be faster if you load the annotation with loadDb() instead of doing it again from scratch
+###
 # filtered annotation
 annotation <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/annotation.rds")
 anno_txdb <- makeTxDbFromGRanges(annotation)
@@ -71,8 +114,6 @@ anno_txdb <- makeTxDbFromGRanges(annotation)
 gen <- "hg38"
 cex <- 0.7
 cex.a <- 0.5
-
-
 ```
 
 
@@ -105,9 +146,19 @@ line <- HeatmapAnnotation(crosslinks = anno_lines(colSums(npc_cl), height = unit
 
 ht_opt$heatmap_column_names_gp = gpar(fontsize = 5)
 
+### TODO MB
+### here i was a bit confused by the heatmap itself, not the code.
+### The colsums shows the sum and goes to up to 13000, but the heatmap color scale 
+### goes to a max of 10. I can't see how the displayed values would add up the way 
+### that they are color coded atm
+### -> also adjust box limitis to avoid that line reaches out of box
+###
 Heatmap(npc_cl_without_0[1:1000,], col =col_fun, cluster_columns = F, cluster_rows = F, top_annotation = line, use_raster = T, raster_device = "png", raster_quality = 10)
 
 
+### TODO MB
+### this can be added directly using linkAnnotations from ComplexHeatmaps
+###
 # names afterwards added in affinity designer
 npc_cl_top_genes <- BS_15nt$gene_name
 npc_cl_top_genes[duplicated(npc_cl_top_genes)] <- ""
@@ -123,6 +174,10 @@ npc_cl_top_genes
 # function for GVIZ plots
 ############################
 
+### TODO MB
+### takes very long to execute, maybe use system.time({}) to track the individual functions parts for speedup
+### Plotting could be done in a loop and piped into a pdf document directly
+###
 plotGviz <- function(GR, i, w,  cl_plus, cl_minus, name, anno, BS, color){
   # get chromosome amd range, make data frame
   chr<- as.character(seqnames(GR[i]))
@@ -157,7 +212,9 @@ plotGviz <- function(GR, i, w,  cl_plus, cl_minus, name, anno, BS, color){
   #pureclip track
   BS_range <- BS[strand(BS)==strand(GR[i])] %>% subsetByOverlaps(.,GR[i]+w[1])
 
-  
+  ### TODO MB
+  ### report_color is global 
+  ###
   BS_new_track <- GeneRegionTrack(BS_range, genome = gen, name="BS endo",cex.axis= cex.a,
                                   col.histogram=report_color[13], fill=report_color[5], stacking="hide", rotation.title=0, cex.title=cex, background.title = "white", fontcolor = "black")
   
@@ -273,6 +330,9 @@ plotGviz(GR = regions_for_gviz_4[4]  , i = 1, w = c(0,0),  cl_plus =hela_cl[[1]]
 # Compare three PURA HeLa CLIPs with spline smoothed maps
 
 ```{r eval=FALSE, include=TRUE}
+### TODO MB
+### why eval FALSE, there is nothing computed here
+###
 ### ===============================================
 ###  Normalisation and spline smoothing of crosslink patterns
 ### ===============================================
@@ -321,6 +381,12 @@ clean_smooth <- function(data_smoothed) {
 ## in the beginning of 3'UTRs
 
 ```{r eval=FALSE, include=TRUE}
+### TODO MB
+### try to avoid re-assigning variables may times, this makes the code hard to understand
+### calculating the coverage of iCLIP counts over a GRanges object can be done wtih BindingSiteFinder, 
+### which is easier to read and faster
+###
+
 ### ============================================
 ###  Crosslink patterns at the start of 3'UTRs
 ### ============================================
@@ -397,6 +463,12 @@ h1 <- Heatmap(cl_window_norm_smooth[[1]], cluster_columns = F, use_raster = T, r
 h2 <- Heatmap(cl_window_norm_smooth[[2]], cluster_columns = F, use_raster = T, raster_device = "png", raster_quality = 10) 
 h3 <- Heatmap(cl_window_norm_smooth[[3]], cluster_columns = F, use_raster = T, raster_device = "png", raster_quality = 10)  
 
+### TODO MB
+### resulting heatmaps look a bit strange, maybe try different sorting of ranges
+### be aware that clustering is only performed on h1 and all heatmaps get there 
+### rows arranged by that clustering
+###
+
 h1+h2+h3
 
 
@@ -406,6 +478,10 @@ h1+h2+h3
 ## in the beginning of CDSs
 
 ```{r eval=FALSE, include=TRUE}
+### TODO MB
+### same as for CDS
+###
+
 ### ============================================
 ###  Crosslink patterns at the start of CDS
 ### ============================================
