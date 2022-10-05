@@ -626,9 +626,11 @@ ggplot(prot_vs_RNA_BS_gg, aes(y = -log10(sca.adj.pval.prot), x = logFC.prot))+
   theme(legend.position = "None")+
  theme(strip.text.x = element_blank())
 
-ggsave(paste0(outpath, "vulcanos_prot_binding.pdf"), height = 8, width = 12, units = "cm")
+ggsave(paste0(outpath, "vulcanos_prot_binding.pdf"), height = 8, width = 8, units = "cm")
   
 # boxplot protein change by binding region
+prot_vs_RNA_BS_gg$region = factor(prot_vs_RNA_BS_gg$region, levels = c("three_prime_UTR", "five_prime_UTR", "CDS"))
+
 ggplot(prot_vs_RNA_BS_gg, aes(x = region, y = logFC.prot, fill = region))+
   geom_boxplot()+
   scale_fill_manual(values = c("darkred", "orange", "#2AB7CA", "blue", "purple", "darkgreen"))+
