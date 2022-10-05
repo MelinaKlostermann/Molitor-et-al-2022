@@ -10,10 +10,10 @@ output:
 
 ```{r setup, include=FALSE}
 require("knitr")
-knitr::opts_chunk$set(warning=FALSE, message=FALSE, cache=TRUE, eval = F) #, fig.pos = "!H", out.extra = ""
+knitr::opts_chunk$set(warning=FALSE, message=FALSE, cache=TRUE) #, fig.pos = "!H", out.extra = ""
 ```
 
-```{r libraries, include=FALSE}
+```{r libraries, include=FALSE, eval = T}
 library(GenomicRanges)
 library(rtracklayer)
 library(GenomicFeatures)
@@ -21,9 +21,10 @@ library(tidyverse)
 library(ggpubr)
 library(Biostrings)
 library(BSgenome)
+library(ggseqlogo)
 
 source("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/XX-helpful-chunks/theme_paper.R")
-
+output <- "/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/"
 ``` 
 
 # What was done?
@@ -34,7 +35,7 @@ source("/Users/melinaklostermann/Documents/projects/PURA/02_R_new_pip/XX-helpful
 
 # Input
 
-```{r}
+```{r echo=TRUE}
 ## transcript sequences fasta from gencode
 transcript_fasta <- readDNAStringSet("/Users/melinaklostermann/Documents/projects/anno/GENCODEv31-p12/gencode.v31.transcripts.fa.gz")
 
@@ -87,7 +88,6 @@ transcriptome_seqs_coords_expr <- transcriptome_seqs_coords[seqnames(transcripto
 ##########################
 
 # prepare a txdb of expressed transcripts
-expressed_transcripts_txdb <- unlist(expressed_transcripts_GR_list) ## this object are not used in the script
 txdb <- makeTxDbFromGRanges(unlist(expressed_transcripts_GR_list))
 
 # prepare a transcript mapper (contains transcript ids and names together with genomic positions of transcripts)
@@ -132,16 +132,13 @@ BS_tx_501nt <- BS_tx_501nt[width(BS_tx_501nt) == 501]
 
 # only one transcript per BS
 
-#################
-## I think this code will randomly assign the BS to the transcript which may differ from the transcript IT in your BS object.
-#################
 BS_tx_501nt <- BS_tx_501nt[!duplicated(BS_tx_501nt$xHits)]
 
 # get transcript sequences of enlarged BS 
 BS_tx_501nt_seqs <- Biostrings::getSeq(x = transcript_fasta, names = BS_tx_501nt)
 BS_tx_501nt_seqs <- BS_tx_501nt_seqs[width(BS_tx_501nt_seqs)==501]
 
-# writeXStringSet(BS_tx_501nt_seqs, filepath = paste0(output,"endo_BS_trans_500nt.fasta"))
+writeXStringSet(BS_tx_501nt_seqs, filepath = paste0(output,"endo_BS_trans_500nt.fasta"))
 
 
 ```
@@ -178,7 +175,7 @@ for(i in 1:NROW(random_transcript_seqs)){
 } 
 
 
-#writeXStringSet(random_transcript_seqs_500, filepath = paste0(output,"background_transcripts_500nt.fasta"))
+writeXStringSet(random_transcript_seqs_500, filepath = paste0(output,"background_transcripts_500nt.fasta"))
 
 
 ```
@@ -257,7 +254,7 @@ head(probs)
 
 ```{r eval = F }
 
-load("~/Desktop/Data/code review/RNApl_endo_BS_trans_500nt.RData")
+probs <- readRDS("/Users/melinaklostermann/Documents/projects/PURA/Molitor-et-al-2022/RNApl_endo_BS_trans_500nt.rds")
 
 #  log-odds ratio
 ##############################
@@ -331,6 +328,7 @@ ggplot(df_accessibility_bs_bg, aes(x=pos))+
   theme(legend.position="none")+
   theme_paper()
 
+ggsave(paste0(output, "acessibility.pdf"), width = 6, height = 6, units = "cm")
 
 
 ```
@@ -343,27 +341,20 @@ ggplot(df_accessibility_bs_bg, aes(x=pos))+
 ############################
 # Sequences of 3'UTR and CDS BS
 ###########################
-BS_3UTR <- BS[BS$type=="three_prime_UTR"] %>% mapToTranscripts(., txdb, extractor.fun = GenomicFeatures::exonsBy, use.names =T) %>% 
+BS_3UTR <- BS[BS$region=="three_prime_UTR"] %>% mapToTranscripts(., txdb, extractor.fun = GenomicFeatures::exonsBy, use.names =T) %>% 
   as.data.frame() %>%
   mutate(seqnames = substring(seqnames,1,15), strand ="+") %>%
-  distinct(xHits, .keep_all = T) %>%  ## this code randomly assign BS to transcript, which may lead to some inconsistencies. There are about 4899 BS sites are assigned to a different transcript. I would suggest to check this out.
+  distinct(xHits, .keep_all = T) %>% 
   filter(start >0 & end >0)%>%
    makeGRangesFromDataFrame(keep.extra.columns = T)
  
-############ Checking the consistency of transcript assignment ################
-tmp <- BS[BS$type=="three_prime_UTR"]
-## keep the BS which present in BS_3UTR
-tmp <- tmp[BS_3UTR$xHits]
-tmp$trans_id2 <- seqnames(BS_3UTR)
-sum(substr(tmp$transcript_id, 1,15) != tmp$trans_id2)
-###############################################################################
 
 BS_3UTR <- BS_3UTR[seqnames(BS_3UTR) %in% substr(names(transcript_fasta),1,15)]
 seqences_BS_3utr <- getSeq(x = transcript_fasta, names = BS_3UTR)
 
 
 
-BS_CDS <- BS[BS$type=="CDS"] %>% mapToTranscripts(., txdb, extractor.fun = GenomicFeatures::exonsBy, use.names =T) %>% 
+BS_CDS <- BS[BS$region=="CDS"] %>% mapToTranscripts(., txdb, extractor.fun = GenomicFeatures::exonsBy, use.names =T) %>% 
   as.data.frame() %>%
   mutate(seqnames = substring(seqnames,1,15), strand ="+") %>%
   distinct(xHits, .keep_all = T) %>% ## The some to 3'UTR part
@@ -466,7 +457,7 @@ calc_olig_freq <- function(seq_regions, oligo){
 }
 
 # function to make 5 scatter plots of oligo frequency 
-plot_freq_scatter <- function(gr_regions, bg, oligo, title, window, color_thresh){
+plot_freq_scatter <- function(gr_regions, bg, oligo, title, window, color_thresh, filename){
   
   # sites: get upstream and downstream window 
   gr_regions = gr_regions[(gr_regions+window+1) %within% transcriptome_seqs_coords]
@@ -509,16 +500,88 @@ plot_freq_scatter <- function(gr_regions, bg, oligo, title, window, color_thresh
     facet_wrap(~group, scales = "free_y")+
     theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
   
-  #ggsave(filename = filename,  width = 12, height=3, device = "pdf", path = outpath)
+  ggsave(filename = filename,  width = 12, height=3, device = "pdf", path = output)
   
   
 }
 
 # use function to make plots
 ###### the width between gr_regions and bg is different, I think this may lead to some problem when we count the frequency ######
-plot_freq_scatter(gr_regions = c(BS_CDS, BS_3UTR)+5, bg = c(random_bg_cds, random_bg_3utr), oligo = 5, window =20, color_thresh = 3,
-                  #filename= "all_BS+5_5nt_Freq_20nt_against_bg.pdf",
+plot_freq_scatter(gr_regions = c(BS_CDS, BS_3UTR)+5, bg = c(random_bg_cds, random_bg_3utr)+5, oligo = 5, window =20, color_thresh = 3,
+                  filename= "all_BS+5_5nt_Freq_20nt_against_bg.pdf",
                   title="all_BS+5_5nt_Freq_20nt_against_bg")
 
 
 ```
+
+# Sequence logos
+- Here are the seqeuncing logos for 3'UTR and CDS binding sites and their surrounding
+```{r logos}
+
+ BS_3UTR_10nt <- BS_3UTR + 10
+ BS_3UTR_10nt <- BS_3UTR_10nt[BS_3UTR_10nt %within% transcriptome_seqs_coords]
+ BS_3UTR_10nt <- BS_3UTR_10nt[width(BS_3UTR_10nt)==25]
+ 
+ BS_CDS_10nt <- BS_CDS + 10
+ BS_CDS_10nt <- BS_CDS_10nt[BS_CDS_10nt %within% transcriptome_seqs_coords]
+ BS_CDS_10nt <- BS_CDS_10nt[width(BS_CDS_10nt)==25]
+
+
+ # make logo both
+ BS_25nt_window_seq <-  getSeq(transcript_fasta, names=c(BS_CDS_10nt, BS_3UTR_10nt)) %>%
+   as.data.frame()
+
+  rect_BS <- data.frame(xmin=10.5, xmax=15.5, ymin=-Inf, ymax=Inf)
+  
+ ggplot()+
+   geom_logo(BS_25nt_window_seq$x)+ #, method = "probability"
+   theme_logo()+
+     geom_rect(data=rect_BS, inherit.aes=FALSE, aes(xmin=xmin, xmax=xmax, ymin=ymin,
+                 ymax=ymax), color="darkred", fill="transparent", alpha=0.3)+
+   ggtitle("Sequence Logo around CDS and 3'UTR BS")
+ ggsave(paste0(output,"logo_cds_and_3utr_BS.pdf"), width = 5, height = 4, units = "cm")
+ 
+```
+
+## Purine probability in binding sites
+
+```{r}
+# How many Gs at center?
+center_nt <- table(substring(BS_25nt_window_seq$x,13,13))
+
+center_nt["G"]/sum(center_nt)
+
+
+# More then x purines
+BS_seq_df <- rbind(as.data.frame(seqences_BS_3utr), as.data.frame(seqences_BS_cds))
+BG_utr_seq_df <- as.data.frame(seqences_bg_3utr) 
+BG_cds_seq_df <- as.data.frame(seqences_bg_cds)
+
+
+
+nts_per_BS_df <- mutate(BS_seq_df, n_purines = stringr::str_count(x, "A") + stringr::str_count(x, "G"))
+nts_per_utr_BG_df <- mutate(BG_utr_seq_df, n_purines = stringr::str_count(x, "A") + stringr::str_count(x, "G"))
+nts_per_cds_BG_df <- mutate(BG_cds_seq_df, n_purines = stringr::str_count(x, "A") + stringr::str_count(x, "G"))
+
+
+purines_per_BS <- data.frame(n_purines = 0:5, n_BS = rep(NA,6), n_utr_BG = rep(NA,6), n_cds_BG = rep(NA,6)) 
+
+for( i in 0:5){
+purines_per_BS$n_BS[i+1] <- nrow(nts_per_BS_df[nts_per_BS_df$n_purines >= i,])/ nrow(nts_per_BS_df)
+purines_per_BS$n_utr_BG[i+1] <- nrow(nts_per_utr_BG_df[nts_per_utr_BG_df$n_purines >= i,])/ nrow(nts_per_utr_BG_df)
+purines_per_BS$n_cds_BG[i+1] <- nrow(nts_per_cds_BG_df[nts_per_cds_BG_df$n_purines >= i,])/ nrow(nts_per_cds_BG_df)
+}
+
+purines_per_BS_gg <- reshape2::melt(purines_per_BS, id.vars = "n_purines")
+purines_per_BS_gg$round <- round(purines_per_BS_gg$value, 2)
+
+ggplot(purines_per_BS_gg, aes(x = n_purines, y = value, fill = variable, label = round))+
+  geom_col(position = "dodge")+
+  scale_fill_manual(values = c("darkred",  "darkgrey", "grey"))+
+  theme_paper()+
+  geom_text()+
+  theme(legend.position = NULL)
+
+ggsave(paste0(output, "purnies_per_bs.pdf"), width = 6, height = 5)
+```
+
